@@ -1,7 +1,7 @@
 // 가계부 서버 (Cloudflare Worker, 무료 요금제)
 //
 // 1) 기록 보관: 휴대폰을 바꿔도, 여러 기기에서 열어도 같은 가계부가 보이게.
-//      GET  /d/{키}   → { tx, stocks, cats, bal, ico }
+//      GET  /d/{키}   → { tx, stocks, cats, bal, ico, rules, kr }
 //      POST /d/{키}   { tx?: {id: 기록|null}, stocks?: {id: 종목|null}, cats?: {kr,de}, bal?: {kr,de}, ico?: {항목: 아이콘|null}, rules?: {상대방: 규칙|null}, restore? }
 //                     보낸 항목만 바꿈 (null = 지움). 다른 기기에서 넣은 기록은 건드리지 않음.
 //    키는 앱이 처음 열릴 때 만든 32자리 무작위 문자열. 키를 아는 사람만 읽고 쓸 수 있음.
@@ -87,6 +87,7 @@ export default {
         data.bal = cleanBal(obj(r.bal), {});
         data.ico = cleanIco(obj(r.ico), {});
         data.rules = cleanRules(obj(r.rules), {});
+        if (r.kr) data.kr = cleanKr(obj(r.kr));
       }
       for (const [id, v] of Object.entries(obj(body.tx)).slice(0, 2000)) {
         if (!ID_RE.test(id)) continue;
@@ -102,6 +103,7 @@ export default {
       if (body.bal) data.bal = cleanBal(obj(body.bal), data.bal);
       if (body.ico) data.ico = cleanIco(obj(body.ico), data.ico || {});
       if (body.rules) data.rules = cleanRules(obj(body.rules), data.rules || {});
+      if (body.kr) data.kr = cleanKr(obj(body.kr));
 
       // 바뀐 게 없으면 저장하지 않음 (무료 요금제 하루 저장 횟수 아끼기)
       if (JSON.stringify(data) !== before) await env.STORE.put(sk, JSON.stringify(data));
@@ -177,6 +179,22 @@ function cleanRules(b, old) {
     if (typeof v === "string" && /^(cat:.{1,40}|in|xfer|skip)$/.test(v)) out[name] = v; else delete out[name];
   }
   return Object.fromEntries(Object.entries(out).slice(-1000));
+}
+
+// 한국 계좌 여러 개: { accts: [{ id, name }], snaps: [{ date, a: { 계좌 id: 잔액 } }] }
+// 토스 등을 보고 가끔 한꺼번에 적는 잔액 기록. 마지막 기록 = 지금 총잔액의 기준
+function cleanKr(v) {
+  const accts = (Array.isArray(v.accts) ? v.accts : []).slice(0, 30)
+    .map(a => ({ id: String(a && a.id || ""), name: String(a && a.name || "").trim().slice(0, 40) }))
+    .filter(a => ID_RE.test(a.id) && a.name);
+  const ids = new Set(accts.map(a => a.id)), byDate = {};
+  for (const s of (Array.isArray(v.snaps) ? v.snaps : []).slice(-400)) {
+    if (!s || !DATE_RE.test(s.date || "")) continue;
+    const a = {};
+    for (const [id, n] of Object.entries(s.a && typeof s.a === "object" ? s.a : {})) { const x = num(n); if (ids.has(id) && x != null && Math.abs(x) < 1e13) a[id] = Math.round(x); }
+    byDate[s.date] = { date: s.date, a };
+  }
+  return { accts, snaps: Object.values(byDate).sort((x, y) => x.date.localeCompare(y.date)) };
 }
 
 // 기준 잔액: { kr: { amount, date } } → 그 날짜까지의 통장 잔액. 이후 기록으로 지금 잔액을 계산
