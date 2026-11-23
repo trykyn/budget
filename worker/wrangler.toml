@@ -1,0 +1,8 @@
+name = "budget-sync"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+
+# 가계부 저장소: data:{연결 키} → { tx, stocks, cats, bal }
+kv_namespaces = [
+  { binding = "STORE", id = "27d3bebfe044467c9f1dd0727b25f2a2" }
+]
