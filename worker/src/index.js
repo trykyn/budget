@@ -2,7 +2,7 @@
 //
 // 1) 기록 보관: 휴대폰을 바꿔도, 여러 기기에서 열어도 같은 가계부가 보이게.
 //      GET  /d/{키}   → { tx, stocks, cats, bal, ico }
-//      POST /d/{키}   { tx?: {id: 기록|null}, stocks?: {id: 종목|null}, cats?: {kr,de}, bal?: {kr,de}, ico?: {항목: 아이콘|null}, restore? }
+//      POST /d/{키}   { tx?: {id: 기록|null}, stocks?: {id: 종목|null}, cats?: {kr,de}, bal?: {kr,de}, ico?: {항목: 아이콘|null}, rules?: {상대방: 규칙|null}, restore? }
 //                     보낸 항목만 바꿈 (null = 지움). 다른 기기에서 넣은 기록은 건드리지 않음.
 //    키는 앱이 처음 열릴 때 만든 32자리 무작위 문자열. 키를 아는 사람만 읽고 쓸 수 있음.
 //    저장소 (KV): STORE — data:{키} → 위 JSON 하나
@@ -13,7 +13,7 @@
 //      GET /s?q=삼성 | 애플 | TIGER 미국     → [{ sym, name, ex, type }]  (네이버 먼저, 없으면 야후)
 //    시세는 야후 파이낸스 (거래소에 따라 15~20분 늦을 수 있음). 1분 동안 같은 답을 재사용.
 
-const ALLOWED_ORIGINS = ["https://trykyn.github.io", "http://localhost:8775"];
+const ALLOWED_ORIGINS = ["https://trykyn.github.io", "http://localhost:8775", "http://localhost:8790"];
 const KEY_RE = /^[A-Za-z0-9]{24,64}$/;
 const ID_RE = /^[A-Za-z0-9_-]{1,24}$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -64,7 +64,7 @@ export default {
 
     if (kind !== "d" || !KEY_RE.test(key || "")) return json({ error: "not_found" }, 404);
     const sk = `data:${key}`;
-    const load = async () => ({ tx: {}, stocks: {}, cats: {}, bal: {}, ico: {}, ...((await env.STORE.get(sk, "json")) || {}) });
+    const load = async () => ({ tx: {}, stocks: {}, cats: {}, bal: {}, ico: {}, rules: {}, ...((await env.STORE.get(sk, "json")) || {}) });
 
     if (request.method === "GET") return json(await load());
 
@@ -80,12 +80,13 @@ export default {
       // 백업 파일로 되살리기: 기록 전체를 바꿈
       if (body.restore && typeof body.restore === "object") {
         const r = body.restore;
-        data = { tx: {}, stocks: {}, cats: {}, bal: {}, ico: {} };
+        data = { tx: {}, stocks: {}, cats: {}, bal: {}, ico: {}, rules: {} };
         for (const [id, v] of Object.entries(obj(r.tx))) { const t = cleanTx(v); if (ID_RE.test(id) && t) data.tx[id] = t; }
         for (const [id, v] of Object.entries(obj(r.stocks))) { const t = cleanStock(v); if (ID_RE.test(id) && t) data.stocks[id] = t; }
         data.cats = cleanCats(obj(r.cats), {});
         data.bal = cleanBal(obj(r.bal), {});
         data.ico = cleanIco(obj(r.ico), {});
+        data.rules = cleanRules(obj(r.rules), {});
       }
       for (const [id, v] of Object.entries(obj(body.tx)).slice(0, 2000)) {
         if (!ID_RE.test(id)) continue;
@@ -100,6 +101,7 @@ export default {
       if (body.cats) data.cats = cleanCats(obj(body.cats), data.cats);
       if (body.bal) data.bal = cleanBal(obj(body.bal), data.bal);
       if (body.ico) data.ico = cleanIco(obj(body.ico), data.ico || {});
+      if (body.rules) data.rules = cleanRules(obj(body.rules), data.rules || {});
 
       // 바뀐 게 없으면 저장하지 않음 (무료 요금제 하루 저장 횟수 아끼기)
       if (JSON.stringify(data) !== before) await env.STORE.put(sk, JSON.stringify(data));
@@ -124,12 +126,12 @@ function cleanTx(v) {
     const eur = num(v.eur), krw = num(v.krw);
     if (eur == null || krw == null || eur <= 0 || krw <= 0) return null;
     const fee = num(v.fee);
-    return { type: "xfer", date, eur: round2(eur), krw: Math.round(krw), fee: fee && fee > 0 ? round2(fee) : undefined, memo: str(v.memo, 200), u };
+    return { type: "xfer", date, eur: round2(eur), krw: Math.round(krw), fee: fee && fee > 0 ? round2(fee) : undefined, memo: str(v.memo, 200), est: v.est ? true : undefined, src: str(v.src, 64), u };
   }
   if (!["kr", "de"].includes(v.acc) || !["in", "out"].includes(v.type)) return null;
   const amount = num(v.amount);
   if (amount == null || amount <= 0 || amount > 1e12) return null;
-  return { acc: v.acc, type: v.type, date, amount: v.acc === "kr" ? Math.round(amount) : round2(amount), cat: str(v.cat, 40), memo: str(v.memo, 200), u };
+  return { acc: v.acc, type: v.type, date, amount: v.acc === "kr" ? Math.round(amount) : round2(amount), cat: str(v.cat, 40), memo: str(v.memo, 200), src: str(v.src, 64), u };
 }
 
 // 종목 하나: acc 'kr'|'de' (어느 증권 계좌), sym 야후 기호, qty 주 수, avg 평균 매수가(그 종목 통화)
@@ -158,6 +160,17 @@ function cleanIco(b, old) {
     if (typeof v === "string" && /^[a-z]{2,12}$/.test(v)) out[name] = v; else delete out[name];
   }
   return Object.fromEntries(Object.entries(out).slice(-200));
+}
+
+// 가져오기에서 배운 것: { 상대방 키: "cat:항목" | "in" | "xfer" | "skip" | null }
+function cleanRules(b, old) {
+  const out = { ...old };
+  for (const [k, v] of Object.entries(b).slice(0, 1000)) {
+    const name = String(k).trim().slice(0, 40);
+    if (!name) continue;
+    if (typeof v === "string" && /^(cat:.{1,40}|in|xfer|skip)$/.test(v)) out[name] = v; else delete out[name];
+  }
+  return Object.fromEntries(Object.entries(out).slice(-1000));
 }
 
 // 기준 잔액: { kr: { amount, date } } → 그 날짜까지의 통장 잔액. 이후 기록으로 지금 잔액을 계산

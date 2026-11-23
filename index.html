@@ -178,6 +178,18 @@ label.f > small { display: block; font-size: 12px; color: var(--mut); font-weigh
 .chart svg { width: 100%; height: 100%; display: block; overflow: visible; }
 .chart .tip { position: absolute; top: 0; transform: translateX(-50%); background: var(--ink); color: var(--inv); font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 6px; white-space: nowrap; pointer-events: none; }
 .code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; word-break: break-all; background: var(--field); padding: 8px 10px; border-radius: 8px; }
+.imp-list { margin-top: 6px; }
+.imp { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line); }
+.imp.off { opacity: .45; }
+.imp .ring { width: 32px; height: 32px; }
+.imp .m { flex: 1; min-width: 0; }
+.imp .t1 { font-size: 14.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.imp .t2 { font-size: 12px; color: var(--mut); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.imp .r { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; flex: none; }
+.imp .r b { font-size: 14.5px; }
+.imp select { font-size: 13px; font-weight: 600; border: 1px solid var(--line); border-radius: 999px; padding: 3px 8px; background: var(--bg); color: var(--ink); max-width: 128px; }
+.imp-bar { position: sticky; bottom: calc(-22px - env(safe-area-inset-bottom)); background: var(--bg); padding: 12px 0 calc(22px + env(safe-area-inset-bottom)); margin-bottom: calc(-22px - env(safe-area-inset-bottom)); }
+.btn:disabled { opacity: .4; }
 #toast { position: fixed; left: 50%; bottom: calc(150px + env(safe-area-inset-bottom)); transform: translateX(-50%); background: var(--ink); color: var(--inv); padding: 10px 18px; border-radius: 999px; font-size: 14.5px; font-weight: 600; z-index: 30; max-width: 90vw; text-align: center; }
 </style>
 </head>
@@ -196,6 +208,7 @@ label.f > small { display: block; font-size: 12px; color: var(--mut); font-weigh
 <div id="sheet-wrap" hidden><div class="backdrop" data-act="close"></div><div class="sheet" id="sheet" role="dialog" aria-modal="true"></div></div>
 <div id="toast" hidden></div>
 
+<script src="import.js"></script>
 <script>
 // ───────── 설정 ─────────
 const API = 'https://budget-sync.weekly-meals-reader.workers.dev';
@@ -276,7 +289,7 @@ let V = { tab: 'kr', mode: 'month', ...lsGet(LS.view, {}) };
 V.cat = null; V.bar = null; V.ym = ymOf(today());
 let sync = { state: 'idle', at: 0 };
 
-function normalize(d) { d = d || {}; return { tx: d.tx || {}, stocks: d.stocks || {}, cats: d.cats || {}, bal: d.bal || {}, ico: d.ico || {} }; }
+function normalize(d) { d = d || {}; return { tx: d.tx || {}, stocks: d.stocks || {}, cats: d.cats || {}, bal: d.bal || {}, ico: d.ico || {}, rules: d.rules || {} }; }
 function saveLocal() { lsSet(LS.data, D); }
 function cats(acc) { return (D.cats[acc] && D.cats[acc].length) ? D.cats[acc] : DEFAULT_CATS[acc]; }
 
@@ -287,20 +300,26 @@ function change(kind, id, val) {
     if (val) D[kind][id] = val; else delete D[kind][id];
   } else if (kind === 'cats') {
     Q.cats = { ...(Q.cats || {}), [id]: val }; D.cats = { ...D.cats, [id]: val };
-  } else if (kind === 'bal' || kind === 'ico') {
+  } else if (kind === 'bal' || kind === 'ico' || kind === 'rules') {
     Q[kind] = { ...(Q[kind] || {}), [id]: val }; D[kind] = { ...D[kind] }; if (val) D[kind][id] = val; else delete D[kind][id];
   }
   saveLocal(); lsSet(LS.queue, Q); scheduleFlush();
 }
+// 여러 개 한꺼번에 (가져오기): 저장은 한 번만
+function changeMany(kind, entries) {
+  Q[kind] = Q[kind] || {}; D[kind] = { ...D[kind] };
+  for (const [id, val] of entries) { Q[kind][id] = val; if (val) D[kind][id] = val; else delete D[kind][id]; }
+  saveLocal(); lsSet(LS.queue, Q); scheduleFlush(100);
+}
 function applyQueue(data, q) {
   for (const k of ['tx', 'stocks']) for (const [id, v] of Object.entries(q[k] || {})) { if (v) data[k][id] = v; else delete data[k][id]; }
   if (q.cats) data.cats = { ...data.cats, ...q.cats };
-  for (const k of ['bal', 'ico']) if (q[k]) for (const [a, v] of Object.entries(q[k])) { if (v) data[k][a] = v; else delete data[k][a]; }
+  for (const k of ['bal', 'ico', 'rules']) if (q[k]) for (const [a, v] of Object.entries(q[k])) { if (v) data[k][a] = v; else delete data[k][a]; }
   return data;
 }
 function mergeQueue(a, b) {
   const o = { ...a };
-  for (const k of ['tx', 'stocks', 'cats', 'bal', 'ico']) if (b[k]) o[k] = { ...(a[k] || {}), ...b[k] };
+  for (const k of ['tx', 'stocks', 'cats', 'bal', 'ico', 'rules']) if (b[k]) o[k] = { ...(a[k] || {}), ...b[k] };
   return o;
 }
 let flushT = null, flushing = false;
@@ -330,7 +349,7 @@ async function pull() {
     if (flushing) return;
     // 처음 쓰는 기기: 이 기기에만 있던 기록이 있으면 서버로 올림
     const firstTime = !Object.keys(data.tx).length && !Object.keys(data.stocks).length && (Object.keys(D.tx).length || Object.keys(D.stocks).length) && !lsGet('budget:pulled', false);
-    if (firstTime) { Q = mergeQueue({ tx: { ...D.tx }, stocks: { ...D.stocks }, cats: D.cats, bal: D.bal, ico: D.ico }, Q); lsSet(LS.queue, Q); }
+    if (firstTime) { Q = mergeQueue({ tx: { ...D.tx }, stocks: { ...D.stocks }, cats: D.cats, bal: D.bal, ico: D.ico, rules: D.rules }, Q); lsSet(LS.queue, Q); }
     lsSet('budget:pulled', true);
     D = applyQueue(data, Q); saveLocal(); sync.at = Date.now(); setSync('ok'); if (!sheetOpen()) render();
     if (Object.keys(Q).length) scheduleFlush(50);
@@ -484,8 +503,8 @@ function txRow(acc, t) {
   if (t.type === 'xfer') {
     ring = `<span class="ring">${ic('xfer', 18)}</span>`;
     t1 = t.memo || ACC[acc].xferLabel;
-    t2 = `${fmtEUR(t.eur)} → ${fmtKRW(t.krw)} · 1€ = ${fmtKRW(t.krw / t.eur)}${t.fee ? ` · 수수료 ${fmtEUR(t.fee)}` : ''}`;
-    amt = acc === 'kr' ? '+' + fmtKRW(t.krw) : '−' + fmtEUR(t.eur + (t.fee || 0));
+    t2 = `${fmtEUR(t.eur)} → ${t.est ? '≈' : ''}${fmtKRW(t.krw)}${t.est ? ' (그날 환율 추정)' : ` · 1€ = ${fmtKRW(t.krw / t.eur)}`}${t.fee ? ` · 수수료 ${fmtEUR(t.fee)}` : ''}`;
+    amt = acc === 'kr' ? (t.est ? '+≈' : '+') + fmtKRW(t.krw) : '−' + fmtEUR(t.eur + (t.fee || 0));
   } else if (t.type === 'in') {
     ring = `<span class="ring">${ic(/월급|급여|이자|gehalt/i.test(t.memo || '') ? 'coin' : 'in', 18)}</span>`;
     t1 = t.memo || ACC[acc].inLabel; t2 = ACC[acc].inLabel; amt = '+' + fmtAcc(acc, t.amount);
@@ -500,8 +519,8 @@ function renderHistory(acc, list) {
   let rows = list.slice();
   if (V.cat) rows = rows.filter(t => t.type === 'out' && t.acc === acc && catOf(acc, t) === V.cat);
   rows.sort((a, b) => b.date.localeCompare(a.date) || (b.u || 0) - (a.u || 0));
-  let h = `<section><h5><span>내역</span><span class="r">${rows.length}건</span></h5>`;
-  if (!rows.length) return h + `<p class="empty">기록이 없어요. 오른쪽 아래 <b>+</b> 로 넣어 보세요.</p></section>`;
+  let h = `<section><h5><span>내역 ${rows.length}</span>${acc === 'de' ? `<button class="r" data-act="import">N26 가져오기</button>` : ''}</h5>`;
+  if (!rows.length) return h + `<p class="empty">기록이 없어요. 오른쪽 아래 <b>+</b> 로 넣${acc === 'de' ? '거나, N26 거래 내역(PDF·CSV)을 가져와' : '어'} 보세요.</p></section>`;
   return h + rows.map(t => txRow(acc, t)).join('') + `</section>`;
 }
 
@@ -663,13 +682,14 @@ function openTx(acc, id) {
       if (st.type === 'xfer') {
         const eur = parseAmt(st.eur), krw = parseAmt(st.krw, true), fee = parseAmt(st.fee);
         if (!eur || !krw) return toast('보낸 돈과 받은 돈을 넣어 주세요');
-        rec = { type: 'xfer', date: st.date, eur: Math.round(eur * 100) / 100, krw: Math.round(krw), ...(fee ? { fee: Math.round(fee * 100) / 100 } : {}), ...(st.memo.trim() ? { memo: st.memo.trim() } : {}), u: Date.now() };
+        rec = { type: 'xfer', date: st.date, eur: Math.round(eur * 100) / 100, krw: Math.round(krw), ...(old?.src ? { src: old.src } : {}), ...(old?.est && Math.round(krw) === old.krw ? { est: true } : {}), ...(fee ? { fee: Math.round(fee * 100) / 100 } : {}), ...(st.memo.trim() ? { memo: st.memo.trim() } : {}), u: Date.now() };
       } else {
         const amount = parseAmt(st.amount, acc === 'kr');
         if (!amount) return toast('금액을 넣어 주세요');
         rec = { acc, type: st.type, date: st.date, amount: acc === 'kr' ? Math.round(amount) : Math.round(amount * 100) / 100, u: Date.now() };
         if (st.type === 'out') rec.cat = st.cat || '기타';
         if (st.memo.trim()) rec.memo = st.memo.trim();
+        if (old?.src) rec.src = old.src;
       }
       change('tx', id || newId(), rec);
       if (ymOf(st.date) !== V.ym && V.mode === 'month') V.ym = ymOf(st.date);
@@ -813,6 +833,153 @@ async function loadChart(sym, range, cur) {
   svg.addEventListener('touchmove', move, { passive: true }); svg.addEventListener('touchend', leave);
 }
 
+// N26 가져오기 (독일 계좌). 파일은 이 기기 안에서만 읽음 (import.js)
+let pdfjsReady = null;
+function loadPdfJs() {
+  if (!pdfjsReady) pdfjsReady = new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+    s.onload = () => { pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; res(); };
+    s.onerror = () => { pdfjsReady = null; rej(new Error('pdf.js')); };
+    document.head.appendChild(s);
+  });
+  return pdfjsReady;
+}
+async function pdfToPages(buf) {
+  await loadPdfJs();
+  const doc = await pdfjsLib.getDocument({ data: buf }).promise;
+  const pages = [];
+  for (let i = 1; i <= doc.numPages; i++) {
+    const tc = await (await doc.getPage(i)).getTextContent();
+    pages.push(N26.pdfItemsToLines(tc.items.filter(it => it.str && it.str.trim()).map(it => ({ x: it.transform[4], y: it.transform[5], s: it.str, w: it.width }))));
+  }
+  return pages;
+}
+// 아이콘 이름 → 독일 계좌 항목 이름 (항목 이름을 바꿔도 아이콘으로 찾음)
+function catForIcon(key) {
+  const list = cats('de');
+  const find = k => list.find(c => catIcon(c) === k);
+  const alt = { phone: 'shield', shield: 'phone', suitcase: 'bag', bag: 'suitcase', cafe: 'food' };
+  return (key && (find(key) || (alt[key] && find(alt[key])))) || (list.includes('기타') ? '기타' : list.at(-1));
+}
+async function eurKrwRates(fromDate) {
+  const range = (Date.now() - new Date(fromDate).getTime()) / 864e5 > 360 ? '5y' : '1y';
+  try {
+    const r = await fetch(`${API}/c?s=${encodeURIComponent('EURKRW=X')}&r=${range}`);
+    const j = await r.json();
+    return j.ts.map((t, i) => [new Date(t * 1000).toISOString().slice(0, 10), j.closes[i]]);
+  } catch { return []; }
+}
+function rateOn(list, date) {
+  let v = null;
+  for (const [d, r] of list) { if (d <= date) v = r; else break; }
+  return v ?? list[0]?.[1] ?? QUOTES['EURKRW=X']?.p ?? null;
+}
+
+function openImport() {
+  const st = { step: 'pick', rows: [], name: '', from: '', filter: 'all', rules: {}, total: 0, internal: 0, dup: 0 };
+  const sel = x => x.act;
+  const draw = () => {
+    const top = $sheet.scrollTop;
+    if (st.step === 'pick' || st.step === 'busy') {
+      $sheet.innerHTML = shTop('N26 가져오기', '독일 계좌') + `<h2>거래 내역 가져오기</h2>
+        <p class="mut" style="margin:6px 0 18px">N26 앱이나 웹(app.n26.com)에서 받은 <b>PDF</b>나 <b>CSV</b>를 골라 주세요. 파일은 이 휴대폰 안에서만 읽고, 어디로도 보내지 않아요.</p>
+        ${st.step === 'busy' ? `<p style="font-weight:700">읽는 중… ${esc(st.name)}</p>` : `<label class="btn wide" style="cursor:pointer">파일 고르기<input type="file" id="i-file" accept=".pdf,.csv,application/pdf,text/csv,text/comma-separated-values" hidden></label>`}
+        ${st.err ? `<p class="up" style="margin-top:12px;font-weight:600">${esc(st.err)}</p>` : ''}
+        <p class="small-note" style="margin-top:18px">· 넣기 전에 목록을 보여줘요. 항목을 고치면 다음부터 그 가게는 알아서 그 항목으로 골라요.<br>· 이미 넣은 거래는 다시 넣지 않아요 (같은 파일을 또 올려도 괜찮아요).<br>· 내 Space(비상금 등)로 옮긴 돈은 지출이 아니라 빼 둬요.<br>· Remitly 같은 송금은 '한국으로 송금'으로 넣고, 원화는 그날 환율로 채워요 (나중에 실제 금액으로 고칠 수 있어요).</p>`;
+      const f = document.getElementById('i-file');
+      if (f) f.onchange = () => f.files[0] && readFile(f.files[0]);
+      return;
+    }
+    const inRange = st.rows.filter(x => !x.dup && x.r.date >= st.from);
+    const take = inRange.filter(x => x.act !== 'skip');
+    const counts = {
+      all: take.length, check: take.filter(x => x.unknown && x.act === `cat:${catForIcon(null)}`).length,
+      xfer: take.filter(x => x.act === 'xfer').length, in: take.filter(x => x.act === 'in').length, skip: inRange.length - take.length,
+    };
+    const shown = st.filter === 'skip' ? inRange.filter(x => x.act === 'skip')
+      : st.filter === 'check' ? take.filter(x => x.unknown && x.act === `cat:${catForIcon(null)}`)
+      : st.filter === 'xfer' ? take.filter(x => x.act === 'xfer') : st.filter === 'in' ? take.filter(x => x.act === 'in') : take;
+    const sumOut = take.filter(x => x.r.amount < 0).reduce((a, x) => a - x.r.amount, 0);
+    const opt = x => {
+      if (x.r.amount > 0) return `<option value="in"${sel(x) === 'in' ? ' selected' : ''}>수입</option><option value="skip"${sel(x) === 'skip' ? ' selected' : ''}>빼기</option>`;
+      return cats('de').map(c => `<option value="cat:${esc(c)}"${sel(x) === 'cat:' + c ? ' selected' : ''}>${esc(c)}</option>`).join('') +
+        `<option value="xfer"${sel(x) === 'xfer' ? ' selected' : ''}>한국으로 송금</option><option value="skip"${sel(x) === 'skip' ? ' selected' : ''}>빼기</option>`;
+    };
+    const icoFor = x => x.act === 'xfer' ? 'xfer' : x.act === 'in' ? 'in' : x.act === 'skip' ? 'x' : catIcon(x.act.slice(4));
+    let h = shTop('N26 가져오기', esc(st.name)) + `<h2>${take.length}건 넣기</h2>
+      <p class="mut" style="margin:4px 0 12px;font-size:13.5px">파일에서 ${st.total}건 읽음${st.dup ? ` · 이미 있는 ${st.dup}건 건너뜀` : ''}${st.internal ? ` · 내 Space 이동 ${st.internal}건 뺌` : ''}<br>지출 합계 ${fmtEUR(sumOut)}</p>
+      <div class="fields" style="margin-bottom:10px"><label class="f"><small>이 날짜부터</small><input class="inp" type="date" id="i-from" value="${st.from}"></label><span></span></div>
+      <div class="types" style="font-size:14px;gap:14px;flex-wrap:wrap">${[['all', '전체'], ['check', '확인 필요'], ['xfer', '송금'], ['in', '수입'], ['skip', '뺀 것']].map(([k, l]) => `<button data-f="${k}" class="${st.filter === k ? 'on' : ''}">${l} ${counts[k]}</button>`).join('')}</div>
+      ${st.filter === 'check' ? `<p class="small-note" style="margin:6px 0 0">어느 항목인지 몰라서 '${esc(catForIcon(null))}'로 둔 거예요. 고르면 같은 곳의 다른 거래도 같이 바뀌고, 다음부터 기억해요.</p>` : ''}
+      <div class="imp-list">${shown.map(x => `<div class="imp${x.act === 'skip' ? ' off' : ''}">
+          <span class="ring">${ic(icoFor(x), 17)}</span>
+          <span class="m"><div class="t1">${esc(x.memo)}</div><div class="t2">${dayLabel(x.r.date)}${x.act === 'xfer' ? ` · €${(x.fee.eur).toLocaleString('ko-KR')}${x.fee.fee ? ` + 수수료 ${fmtEUR(x.fee.fee)}` : ''}` : ''}${x.r.ref && x.act !== 'xfer' ? ' · ' + esc(x.r.ref.slice(0, 40)) : ''}</div></span>
+          <span class="r"><b class="num">${x.r.amount > 0 ? '+' : '−'}${fmtEUR(Math.abs(x.r.amount))}</b><select data-i="${x.i}" aria-label="항목">${opt(x)}</select></span></div>`).join('') || '<p class="empty">없어요</p>'}</div>
+      <div class="imp-bar"><button class="btn wide" id="i-go"${take.length ? '' : ' disabled'}>${take.length}건 넣기</button></div>`;
+    $sheet.innerHTML = h;
+    $sheet.scrollTop = top;
+    $sheet.querySelectorAll('[data-f]').forEach(b => b.onclick = () => { st.filter = b.dataset.f; $sheet.scrollTop = 0; draw(); });
+    document.getElementById('i-from').onchange = e => { if (/^\d{4}-\d{2}-\d{2}$/.test(e.target.value)) { st.from = e.target.value; draw(); } };
+    $sheet.querySelectorAll('select[data-i]').forEach(s => s.onchange = () => {
+      const x = st.rows[+s.dataset.i], v = s.value;
+      x.act = v; x.manual = true;
+      let n = 0;
+      if (x.pkey) {
+        st.rules[x.pkey] = v;
+        for (const y of st.rows) if (y !== x && !y.manual && !y.dup && y.pkey === x.pkey && Math.sign(y.r.amount) === Math.sign(x.r.amount)) { y.act = v; n++; }
+      }
+      if (n) toast(`같은 곳 ${n}건도 바꿨어요`);
+      draw();
+    });
+    document.getElementById('i-go').onclick = () => doImport(take);
+  };
+
+  async function readFile(file) {
+    st.step = 'busy'; st.name = file.name; st.err = null; draw();
+    try {
+      let recs;
+      if (/\.pdf$/i.test(file.name) || file.type === 'application/pdf') recs = N26.parsePdfLines(await pdfToPages(await file.arrayBuffer()));
+      else recs = N26.parseCsv(await file.text());
+      if (!recs.length) throw new Error('거래를 못 찾았어요. N26 PDF나 CSV가 맞는지 확인해 주세요.');
+      recs = N26.withSrc(recs).sort((a, b) => a.date.localeCompare(b.date));
+      const have = new Set(Object.values(D.tx).map(t => t.src).filter(Boolean));
+      st.rows = recs.map((r, i) => {
+        const s = N26.suggest(r, { rules: D.rules });
+        const act = s.type === 'out' ? `cat:${s.cat && cats('de').includes(s.cat) ? s.cat : catForIcon(s.key)}` : s.type;
+        return { i, r, act, pkey: s.pkey, memo: s.memo || r.partner || '(이름 없음)', unknown: s.type === 'out' && !s.key && !s.cat, internal: s.why === 'internal', dup: have.has(r.src), fee: N26.splitFee(r.amount) };
+      });
+      st.total = recs.length; st.dup = st.rows.filter(x => x.dup).length; st.internal = st.rows.filter(x => x.internal && !x.dup).length;
+      st.from = recs[0].date; st.step = 'list'; st.filter = 'all';
+    } catch (e) {
+      st.step = 'pick'; st.err = e && e.message && !/^pdf\.js$/.test(e.message) ? e.message : '파일을 못 읽었어요. 인터넷 연결(PDF 읽기 도구를 받아야 해요)과 파일을 확인해 주세요.';
+    }
+    draw();
+  }
+
+  async function doImport(take) {
+    const btn = document.getElementById('i-go'); btn.disabled = true; btn.textContent = '넣는 중…';
+    const needRate = take.some(x => x.act === 'xfer');
+    const rates = needRate ? await eurKrwRates(take[0].r.date) : [];
+    const now = Date.now();
+    const entries = take.map((x, k) => {
+      const r = x.r, base = { date: r.date, src: r.src, u: now + k };
+      if (x.act === 'xfer') {
+        const rate = rateOn(rates, r.date);
+        return [newId(), { type: 'xfer', ...base, eur: x.fee.eur, ...(x.fee.fee ? { fee: x.fee.fee } : {}), krw: Math.round(x.fee.eur * (rate || 0)), est: true, memo: x.memo }];
+      }
+      if (x.act === 'in') return [newId(), { acc: 'de', type: 'in', ...base, amount: Math.round(Math.abs(r.amount) * 100) / 100, memo: x.memo }];
+      return [newId(), { acc: 'de', type: 'out', ...base, amount: Math.round(Math.abs(r.amount) * 100) / 100, cat: x.act.slice(4), memo: x.memo }];
+    }).filter(([, t]) => t.type !== 'xfer' || t.krw > 0);
+    changeMany('tx', entries);
+    const rules = Object.entries(st.rules).filter(([k, v]) => k && D.rules[k] !== v);
+    if (rules.length) changeMany('rules', rules);
+    closeSheet();
+    toast(`${entries.length}건 넣었어요`);
+  }
+  openSheet(''); draw();
+}
+
 // 설정
 function openSettings() {
   let picking = null; // 아이콘 고르는 중인 항목 'acc|i'
@@ -834,6 +1001,9 @@ function openSettings() {
         `<div class="cat-edit"><span class="ring" style="border-style:dashed;border-color:var(--faint);color:var(--faint)">${ic('plus', 18, 2)}</span><input class="inp" id="n-${acc}" placeholder="새 항목 이름" maxlength="40"><button class="x-btn" data-add="${acc}" aria-label="추가" style="color:var(--ink)">${ic('plus', 20, 2.2)}</button></div>
         <p class="small-note" style="margin-top:8px">동그라미를 누르면 아이콘을 바꿀 수 있어요. 이름을 고치면 예전 기록도 같이 바뀌어요. 색은 순서대로 정해져요 (8번째까지, '기타'는 회색).</p></div>`;
     }
+    const nRules = Object.keys(D.rules || {}).length;
+    h += `<div class="sec"><h3>N26 거래 내역 가져오기</h3><p class="mut">N26 PDF나 CSV를 고르면 독일 계좌에 한꺼번에 넣어요.${nRules ? ` 가게 ${nRules}곳의 항목을 기억하고 있어요.` : ''}</p>
+      <div class="actions"><button class="btn line" data-act="import">가져오기</button>${nRules ? '<button class="btn line" id="r-clear">기억 지우기</button>' : ''}</div></div>`;
     const link = `${APP_URL}#k=${KEY}`;
     h += `<div class="sec"><h3>다른 기기에서 같이 보기</h3><p class="mut">이 링크를 다른 기기(아이패드, 컴퓨터)에서 열면 같은 가계부가 보여요. <b>링크를 아는 사람은 누구나 볼 수 있으니</b> 다른 사람에게 보내지 마세요.</p>
       <div class="code" id="k-link">${esc(link)}</div>
@@ -864,6 +1034,8 @@ function openSettings() {
       if (list.includes(nn)) { toast('이미 있는 이름이에요'); inp.value = oldName; return; }
       list[i] = nn; change('cats', acc, list);
       if (D.ico[oldName]) { change('ico', nn, D.ico[oldName]); }
+      const rr = Object.entries(D.rules || {}).filter(([, v]) => v === 'cat:' + oldName).map(([k]) => [k, 'cat:' + nn]);
+      if (acc === 'de' && rr.length) changeMany('rules', rr);
       for (const [id, t] of Object.entries(D.tx)) if (t.acc === acc && t.type === 'out' && t.cat === oldName) change('tx', id, { ...t, cat: nn, u: Date.now() });
       draw();
     });
@@ -883,6 +1055,8 @@ function openSettings() {
       change('cats', acc, list); picking = `${acc}|${list.indexOf(nn)}`; draw();
       toast('아이콘을 골라 주세요');
     });
+    const rc = document.getElementById('r-clear');
+    if (rc) rc.onclick = () => { if (confirm('가게별로 기억한 항목을 모두 지울까요? 넣어 둔 기록은 그대로예요.')) { changeMany('rules', Object.keys(D.rules).map(k => [k, null])); draw(); } };
     document.getElementById('k-copy').onclick = async () => {
       try { await navigator.clipboard.writeText(link); toast('복사했어요'); }
       catch { const r = document.createRange(); r.selectNodeContents(document.getElementById('k-link')); getSelection().removeAllRanges(); getSelection().addRange(r); toast('길게 눌러 복사해 주세요'); }
@@ -914,6 +1088,7 @@ document.addEventListener('click', e => {
   const a = el.dataset.act, v = el.dataset.v;
   if (a === 'close') return closeSheet();
   if (a === 'settings') return openSettings();
+  if (a === 'import') return openImport();
   if (a === 'add') return openTx(V.tab);
   if (a === 'edit') { if (D.tx[el.dataset.id]) openTx(V.tab, el.dataset.id); return; }
   if (a === 'prev') return shiftPeriod(-1);
