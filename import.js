@@ -225,7 +225,8 @@
     const day = d => Date.UTC(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10)) / 864e5;
     for (const inc of rows) {
       if (inc.act !== 'pass' || inc.r.amount <= 0) continue;
-      const m = rows.find(o => !used.has(o) && o !== inc && o.r.amount < 0 && o.r.kind === 'transfer' && o.r.iban && !o.r.internal && !o.manual && o.act !== 'pass'
+      // 짝(나간 돈)은 이번에 새로 넣을 거래 중에서만 (o.dup = 이미 가계부에 있음). 들어온 돈(inc)은 이미 있는 것이어도 됨
+      const m = rows.find(o => !used.has(o) && o !== inc && !o.dup && o.r.amount < 0 && o.r.kind === 'transfer' && o.r.iban && !o.r.internal && !o.manual && o.act !== 'pass'
         && day(o.r.date) >= day(inc.r.date) && day(o.r.date) - day(inc.r.date) <= 10
         && -o.r.amount <= inc.r.amount + 0.001 && -o.r.amount >= inc.r.amount * 0.8);
       if (m) { used.add(m); m.act = 'pass'; m.pairOf = inc; changed.push(m); }
