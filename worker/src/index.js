@@ -116,7 +116,7 @@ const num = v => { const n = typeof v === "number" ? v : parseFloat(String(v ?? 
 const str = (v, n) => (v == null || v === "" ? undefined : String(v).slice(0, n));
 const round2 = n => Math.round(n * 100) / 100;
 
-// 기록 하나: acc 'kr'|'de', type 'out'(지출) | 'in'(수입·입금) | 'xfer'(독일 → 한국 송금, 두 계좌에 모두 보임)
+// 기록 하나: acc 'kr'|'de', type 'out'(지출) | 'in'(수입·입금) | 'save'(저금) | 'xfer'(독일 → 한국 송금, 두 계좌에 모두 보임)
 function cleanTx(v) {
   if (!v || typeof v !== "object") return null;
   const date = DATE_RE.test(v.date || "") ? v.date : null;
@@ -127,6 +127,12 @@ function cleanTx(v) {
     if (eur == null || krw == null || eur <= 0 || krw <= 0) return null;
     const fee = num(v.fee);
     return { type: "xfer", date, eur: round2(eur), krw: Math.round(krw), fee: fee && fee > 0 ? round2(fee) : undefined, memo: str(v.memo, 200), est: v.est ? true : undefined, src: str(v.src, 64), u };
+  }
+  // 저금: 내 Space 등으로 옮긴 돈 (+ 넣음 / − 꺼냄). n = 가져오기에서 묶은 건수
+  if (v.type === "save") {
+    const a = num(v.amount), n = num(v.n);
+    if (!["kr", "de"].includes(v.acc) || a == null || !a || Math.abs(a) > 1e9) return null;
+    return { acc: v.acc, type: "save", date, amount: round2(a), n: n && n > 0 ? Math.min(Math.round(n), 10000) : undefined, memo: str(v.memo, 200), src: str(v.src, 64), u };
   }
   if (!["kr", "de"].includes(v.acc) || !["in", "out"].includes(v.type)) return null;
   const amount = num(v.amount);
@@ -176,7 +182,7 @@ function cleanRules(b, old) {
 // 기준 잔액: { kr: { amount, date } } → 그 날짜까지의 통장 잔액. 이후 기록으로 지금 잔액을 계산
 function cleanBal(b, old) {
   const out = { ...old };
-  for (const acc of ["kr", "de"]) {
+  for (const acc of ["kr", "de", "sv"]) { // sv = 저금 Space 잔액
     if (!(acc in b)) continue;
     const v = b[acc], a = v && num(v.amount);
     if (v && a != null && DATE_RE.test(v.date || "")) out[acc] = { amount: a, date: v.date }; else delete out[acc];

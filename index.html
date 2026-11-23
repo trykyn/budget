@@ -105,6 +105,10 @@ h5 button.r { color: var(--ink); font-weight: 700; display: flex; align-items: c
 .tx .t1 { font-size: 15px; font-weight: 600; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tx .t2 { font-size: 12.5px; color: var(--mut); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tx .amt { font-weight: 700; font-size: 15px; white-space: nowrap; }
+h5 .pill { display: inline-flex; align-items: center; gap: 4px; letter-spacing: 0; font-size: 13.5px; font-weight: 700; color: var(--ink); border: 1.3px solid var(--ink); border-radius: 999px; padding: 6px 13px; }
+.hero.up { color: var(--up); } .hero.down { color: var(--down); }
+.stock .right div { font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+.chip.on { background: var(--ink); color: var(--inv); border-color: var(--ink); }
 .filter { display: inline-flex; align-items: center; gap: 4px; color: var(--ink); font-weight: 700; letter-spacing: 0; font-size: 13px; }
 
 /* 주식 */
@@ -211,6 +215,7 @@ label.f > small { display: block; font-size: 12px; color: var(--mut); font-weigh
 <script src="import.js"></script>
 <script>
 // ───────── 설정 ─────────
+const VERSION = '2026-11-23 · 3';
 const API = 'https://budget-sync.weekly-meals-reader.workers.dev';
 const APP_URL = 'https://trykyn.github.io/budget/';
 const LS = { key: 'budget:key', data: 'budget:data', queue: 'budget:queue', quotes: 'budget:quotes', view: 'budget:view' };
@@ -250,6 +255,7 @@ const P = {
   in:      '<path d="M12 4v10M8 10.2l4 4 4-4"/><path d="M4.5 15v3.4a1.6 1.6 0 0 0 1.6 1.6h11.8a1.6 1.6 0 0 0 1.6-1.6V15"/>',
   coin:    '<circle cx="12" cy="12" r="8.2"/><path d="M15 9a3.9 3.9 0 1 0 0 6M7.8 11h5.4M7.8 13.2h5.4"/>',
   xfer:    '<path d="M4 8.5h14L14.5 5M20 15.5H6L9.5 19"/>',
+  piggy:   '<path d="M4.5 12.2c0-3.3 3-5.7 6.8-5.7h1.4c2.4 0 4.4 1 5.5 2.6l1.8.2v3.9l-1.6.5c-.5 1-1.3 1.8-2.4 2.4V19h-2.6v-1.8h-3.2V19H7.6v-2.6c-1.9-1-3.1-2.4-3.1-4.2z"/><path d="M10.2 9.2h3.4M4.6 11.4c-1 0-1.6-.6-1.6-1.4"/><circle cx="16.2" cy="11" r=".9" fill="currentColor" stroke="none"/>',
   // 화면용
   gear:    '<circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8"/>',
   left:    '<path d="M15 18l-6-6 6-6"/>',
@@ -257,7 +263,7 @@ const P = {
   plus:    '<path d="M12 5v14M5 12h14"/>',
   x:       '<path d="M6 6l12 12M18 6L6 18"/>',
 };
-const PICKABLE = ['home', 'basket', 'food', 'cafe', 'tram', 'car', 'shield', 'phone', 'kid', 'bag', 'suitcase', 'card', 'heart', 'envelope', 'repeat', 'receipt', 'medical', 'gift', 'book', 'coin', 'dots'];
+const PICKABLE = ['home', 'basket', 'food', 'cafe', 'tram', 'car', 'shield', 'phone', 'kid', 'bag', 'suitcase', 'card', 'heart', 'envelope', 'repeat', 'receipt', 'medical', 'gift', 'book', 'coin', 'piggy', 'dots'];
 const ic = (n, s = 20, w = 1.7) => `<svg class="i" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[n] || P.dots}</svg>`;
 // 이름으로 아이콘 짐작 (설정에서 바꾼 게 있으면 그것)
 const GUESS = [
@@ -265,7 +271,7 @@ const GUESS = [
   [/카페|커피|빵/i, 'cafe'], [/교통|기차|버스|트램|지하철|티켓|bahn/i, 'tram'], [/자동차|주유|차량|주차/i, 'car'], [/보험/i, 'shield'],
   [/통신|휴대폰|핸드폰|인터넷|전화/i, 'phone'], [/아이|육아|어린이|키타|kita/i, 'kid'], [/쇼핑|옷/i, 'bag'], [/여행|휴가|호텔/i, 'suitcase'],
   [/카드/i, 'card'], [/부모|가족|용돈|엄마|아빠/i, 'heart'], [/경조사|축의|부조|조의/i, 'envelope'], [/구독|넷플릭스|유튜브|스포티파이/i, 'repeat'],
-  [/세금|공과금|steuer/i, 'receipt'], [/병원|의료|약|건강/i, 'medical'], [/선물/i, 'gift'], [/교육|학원|학교|책/i, 'book'], [/월급|급여|이자/i, 'coin'],
+  [/세금|공과금|steuer/i, 'receipt'], [/병원|의료|약|건강/i, 'medical'], [/선물/i, 'gift'], [/교육|학원|학교|책/i, 'book'], [/월급|급여|이자/i, 'coin'], [/저금|적금|저축|비상금/i, 'piggy'],
 ];
 function catIcon(name) {
   if (D.ico && D.ico[name] && P[D.ico[name]]) return D.ico[name];
@@ -403,24 +409,33 @@ function shiftPeriod(n) {
 const allTx = () => Object.entries(D.tx).map(([id, t]) => ({ id, ...t }));
 const txOf = acc => allTx().filter(t => t.type === 'xfer' || t.acc === acc);
 // 기록 하나가 그 계좌에 주는 변화: { inc, out, xfer } (xfer = 독일에서 나간 송금, 한국은 inc 에 포함)
+// sav = 저금 (내 Space 등으로 옮긴 돈: 지출이 아니고 모은 돈. 꺼내면 음수)
 function effect(t, acc) {
-  if (t.type === 'xfer') return acc === 'kr' ? { inc: t.krw, out: 0, xfer: 0 } : { inc: 0, out: 0, xfer: t.eur + (t.fee || 0) };
-  if (t.acc !== acc) return { inc: 0, out: 0, xfer: 0 };
-  return t.type === 'in' ? { inc: t.amount, out: 0, xfer: 0 } : { inc: 0, out: t.amount, xfer: 0 };
+  const z = { inc: 0, out: 0, xfer: 0, sav: 0 };
+  if (t.type === 'xfer') return acc === 'kr' ? { ...z, inc: t.krw } : { ...z, xfer: t.eur + (t.fee || 0) };
+  if (t.acc !== acc) return z;
+  if (t.type === 'save') return { ...z, sav: t.amount };
+  return t.type === 'in' ? { ...z, inc: t.amount } : { ...z, out: t.amount };
 }
 function sums(list, acc) {
-  const s = { inc: 0, out: 0, xfer: 0, xEur: 0, xKrw: 0 };
+  const s = { inc: 0, out: 0, xfer: 0, sav: 0, xEur: 0, xKrw: 0 };
   for (const t of list) {
-    const e = effect(t, acc); s.inc += e.inc; s.out += e.out; s.xfer += e.xfer;
+    const e = effect(t, acc); s.inc += e.inc; s.out += e.out; s.xfer += e.xfer; s.sav += e.sav;
     if (t.type === 'xfer') { s.xEur += t.eur; s.xKrw += t.krw; }
   }
-  s.net = s.inc - s.out - s.xfer; return s;
+  s.net = s.inc - s.out - s.xfer - s.sav; return s;
 }
 function balanceNow(acc) {
   const b = D.bal[acc]; if (!b) return null;
   let v = b.amount;
-  for (const t of txOf(acc)) if (t.date > b.date) { const e = effect(t, acc); v += e.inc - e.out - e.xfer; }
+  for (const t of txOf(acc)) if (t.date > b.date) { const e = effect(t, acc); v += e.inc - e.out - e.xfer - e.sav; }
   return v;
+}
+// 모은 돈: 설정에서 맞춘 저금 잔액(bal.sv) + 그 뒤 저금 기록. 안 맞췄으면 가계부에 넣은 저금만 더함
+function savingsNow() {
+  const b = D.bal.sv; let v = b ? b.amount : 0, any = !!b;
+  for (const t of allTx()) if (t.type === 'save' && (!b || t.date > b.date)) { v += t.amount; any = true; }
+  return any ? { total: v, based: !!b } : null;
 }
 function catColor(acc, c) {
   if (!c || c === '기타') return 'var(--other)';
@@ -436,7 +451,10 @@ document.getElementById('fab').innerHTML = ic('plus', 26, 2.2);
 
 function render() {
   document.querySelectorAll('[data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === V.tab));
-  document.getElementById('fab').hidden = V.tab === 'st';
+  // 동그란 + : 계좌 탭에서는 기록 넣기, 주식 탭에서는 종목 추가
+  const fab = document.getElementById('fab');
+  fab.dataset.act = V.tab === 'st' ? 'stock-add' : 'add';
+  fab.setAttribute('aria-label', V.tab === 'st' ? '종목 추가' : '기록 넣기');
   lsSet(LS.view, { tab: V.tab, mode: V.mode });
   $view.innerHTML = V.tab === 'st' ? renderStocks() : renderAccount(V.tab);
 }
@@ -458,11 +476,13 @@ function renderAccount(acc) {
   } else {
     h += `<div class="three"><div>수입<b>${f(s.inc)}</b></div><div>지출<b>${f(s.out)}</b></div><div>한국으로<b>${f(s.xfer)}</b></div></div>`;
     if (s.xKrw) h += `<div class="note-line">${ic('xfer', 16)}<span>한국 계좌에 <b>${fmtKRW(s.xKrw)}</b> 들어감 · 평균 1€ = ${fmtKRW(s.xKrw / s.xEur)}</span></div>`;
+    const sv = savingsNow();
+    if (sv || s.sav) h += `<button class="note-line" data-act="settings" style="width:100%;text-align:left">${ic('piggy', 16)}<span>${V.mode === 'year' ? '올해' : '이번 달'} 저금 <b>${signed(fmtEUR, s.sav)}</b>${sv ? ` · 모은 돈 <b>${fmtEUR(sv.total)}</b>${sv.based ? '' : ' <span class="mut">(넣은 기록만)</span>'}` : ''}</span></button>`;
   }
   if (acc === 'kr' && Object.keys(D.stocks).length) {
-    const P = portfolio();
-    h += `<button class="row-link" data-tab="st"><span class="mut">주식</span><span style="flex:1;text-align:right"><b>${P.total != null ? fmtKRW(P.total) : '–'}</b>
-      <span class="${dir(P.today)}" style="font-weight:700;margin-left:8px">${P.today != null ? pctTxt(P.todayPct) : ''}</span></span>${ic('right', 16, 2)}</button>`;
+    const P = portfolio(), g = P.gainPct != null;
+    h += `<button class="row-link" data-tab="st"><span class="mut">주식${g ? ' · 평단 대비' : ''}</span><span style="flex:1;text-align:right"><b>${P.total != null ? fmtKRW(P.total) : '–'}</b>
+      <span class="${dir(g ? P.gain : P.today)}" style="font-weight:700;margin-left:8px">${g ? pctTxt(P.gainPct) : P.today != null ? pctTxt(P.todayPct) : ''}</span></span>${ic('right', 16, 2)}</button>`;
   }
   h += renderSpending(acc, list, s.out);
   if (V.mode === 'year') h += renderYearBars(acc);
@@ -505,6 +525,10 @@ function txRow(acc, t) {
     t1 = t.memo || ACC[acc].xferLabel;
     t2 = `${fmtEUR(t.eur)} → ${t.est ? '≈' : ''}${fmtKRW(t.krw)}${t.est ? ' (그날 환율 추정)' : ` · 1€ = ${fmtKRW(t.krw / t.eur)}`}${t.fee ? ` · 수수료 ${fmtEUR(t.fee)}` : ''}`;
     amt = acc === 'kr' ? (t.est ? '+≈' : '+') + fmtKRW(t.krw) : '−' + fmtEUR(t.eur + (t.fee || 0));
+  } else if (t.type === 'save') {
+    ring = `<span class="ring">${ic('piggy', 18)}</span>`;
+    t1 = t.memo || '저금'; t2 = (t.amount >= 0 ? '저금' : '저금에서 꺼냄') + (t.n ? ` · ${t.n}건 묶음` : '');
+    amt = (t.amount >= 0 ? '−' : '+') + fmtEUR(Math.abs(t.amount));
   } else if (t.type === 'in') {
     ring = `<span class="ring">${ic(/월급|급여|이자|gehalt/i.test(t.memo || '') ? 'coin' : 'in', 18)}</span>`;
     t1 = t.memo || ACC[acc].inLabel; t2 = ACC[acc].inLabel; amt = '+' + fmtAcc(acc, t.amount);
@@ -519,7 +543,7 @@ function renderHistory(acc, list) {
   let rows = list.slice();
   if (V.cat) rows = rows.filter(t => t.type === 'out' && t.acc === acc && catOf(acc, t) === V.cat);
   rows.sort((a, b) => b.date.localeCompare(a.date) || (b.u || 0) - (a.u || 0));
-  let h = `<section><h5><span>내역 ${rows.length}</span>${acc === 'de' ? `<button class="r" data-act="import">N26 가져오기</button>` : ''}</h5>`;
+  let h = `<section><h5><span>내역 ${rows.length}</span>${acc === 'de' ? `<button class="pill" data-act="import">N26 가져오기</button>` : ''}</h5>`;
   if (!rows.length) return h + `<p class="empty">기록이 없어요. 오른쪽 아래 <b>+</b> 로 넣${acc === 'de' ? '거나, N26 거래 내역(PDF·CSV)을 가져와' : '어'} 보세요.</p></section>`;
   return h + rows.map(t => txRow(acc, t)).join('') + `</section>`;
 }
@@ -530,55 +554,70 @@ const fxKRW = cur => !cur || cur === 'KRW' ? 1 : QUOTES[`${cur}KRW=X`]?.p;
 function hv(h) {
   const q = QUOTES[h.sym]; if (!q) return { q: null };
   const cur = q.cur || h.cur, fx = fxKRW(cur);
-  const o = { q, cur, fx, val: null, today: null, gain: null, gainPct: h.avg ? (q.p / h.avg - 1) * 100 : null };
+  const o = { q, cur, fx, val: null, today: null, gain: null, cost: null, gainPct: h.avg ? (q.p / h.avg - 1) * 100 : null };
   if (fx) {
     o.val = q.p * h.qty * fx;
     o.today = q.prev != null ? (q.p - q.prev) * h.qty * fx : null;
     o.gain = h.avg ? (q.p - h.avg) * h.qty * fx : null;
+    o.cost = h.avg ? h.avg * h.qty * fx : null;
   }
   return o;
 }
+// 수익은 평단 기준 (평단을 넣은 종목만). 오늘 등락은 참고로만
 function portfolio() {
-  let total = 0, today = 0, gain = 0, cost = 0, anyAvg = false, any = false;
+  let total = 0, today = 0, gain = 0, cost = 0, anyAvg = false, any = false, missing = 0;
   for (const h of holdings()) {
+    if (!h.avg) missing++;
     const v = hv(h);
     if (v.val == null) continue;
     any = true; total += v.val; today += v.today || 0;
-    if (v.gain != null) { gain += v.gain; cost += v.val - v.gain; anyAvg = true; }
+    if (v.gain != null) { gain += v.gain; cost += v.cost; anyAvg = true; }
   }
-  return { total: any ? total : null, today: any ? today : null, todayPct: any && total - today ? today / (total - today) * 100 : null, gain: anyAvg ? gain : null, gainPct: anyAvg && cost ? gain / cost * 100 : null };
+  return { total: any ? total : null, today: any ? today : null, todayPct: any && total - today ? today / (total - today) * 100 : null, gain: anyAvg ? gain : null, cost: anyAvg ? cost : null, gainPct: anyAvg && cost ? gain / cost * 100 : null, missing };
 }
-function spark(closes, cls) {
+// 작은 그래프: 최근 1개월 + 점선 = 내 평단
+function spark(closes, cls, avg) {
   if (!closes || closes.length < 2) return '<svg></svg>';
-  const min = Math.min(...closes), max = Math.max(...closes), w = 60, hh = 26, rng = max - min || 1;
-  const pts = closes.map((c, i) => `${(i / (closes.length - 1) * w).toFixed(1)},${(hh - (c - min) / rng * hh).toFixed(1)}`).join(' ');
-  return `<svg viewBox="0 0 60 26" aria-hidden="true"><polyline points="${pts}" fill="none" stroke="var(--${cls === 'flat' ? 'mut' : cls})" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/></svg>`;
+  const all = avg ? [...closes, avg] : closes;
+  const min = Math.min(...all), max = Math.max(...all), w = 60, hh = 26, rng = max - min || 1;
+  const Y = c => (hh - (c - min) / rng * hh).toFixed(1);
+  const pts = closes.map((c, i) => `${(i / (closes.length - 1) * w).toFixed(1)},${Y(c)}`).join(' ');
+  return `<svg viewBox="0 0 60 26" aria-hidden="true">${avg ? `<line x1="0" x2="60" y1="${Y(avg)}" y2="${Y(avg)}" stroke="var(--mut)" stroke-width="1" stroke-dasharray="2 2.5"/>` : ''}<polyline points="${pts}" fill="none" stroke="var(--${cls === 'flat' ? 'mut' : cls})" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/></svg>`;
 }
+const signedPct = n => `${n > 0 ? '+' : n < 0 ? '−' : ''}${Math.abs(n).toFixed(2)}%`;
+const signedKRW = n => `${n > 0 ? '+' : n < 0 ? '−' : ''}${fmtKRW(Math.abs(n))}`;
 function renderStocks() {
   const list = holdings();
   if (!list.length) return `<div class="hero" style="font-size:30px;white-space:normal;margin-top:20px">갖고 있는 주식을<br>넣어 보세요</div>
-    <p class="mut" style="margin:10px 0 22px">종목과 수량만 넣으면 오늘 오르내린 것과 평가금액·수익을 알아서 계산해요.</p>
+    <p class="mut" style="margin:10px 0 22px">종목, 수량, 평단(평균 매수가)을 넣으면 내 평단보다 얼마나 올랐는지·내렸는지 알아서 계산해요.</p>
     <button class="btn" data-act="stock-add">${ic('plus', 18, 2.4)} 종목 추가</button>
     <p class="small-note">한국 주식·ETF(삼성전자, TIGER 미국S&P500…)와 미국 주식(애플, 테슬라…) 모두 한글로 찾을 수 있어요.</p>`;
   const P = portfolio();
   const at = quotesAt ? new Date(quotesAt) : null;
   const eur = QUOTES['EURKRW=X']?.p;
-  let h = `<div class="mon"><span>${at ? `${at.getHours()}:${String(at.getMinutes()).padStart(2, '0')} 기준` : '시세 받는 중…'}</span><button data-act="refresh" style="font-weight:700;color:var(--ink)">새로고침</button></div>
-    <div class="hero">${P.total != null ? fmtKRW(P.total) : '–'}</div>
-    <div class="hero-sub"><span>총 평가금액</span>${eur && P.total ? `<span>≈ ${fmtEUR(P.total / eur)}</span>` : ''}</div>
-    <div class="three" style="grid-template-columns:1fr 1fr"><div>오늘<b class="${dir(P.today)}">${P.today != null ? `${arrow(P.today)} ${fmtKRW(Math.abs(P.today))}` : '–'}</b><span class="${dir(P.today)}" style="font-weight:600">${P.todayPct != null ? Math.abs(P.todayPct).toFixed(2) + '%' : ''}</span></div>
-    <div>총 수익<b class="${dir(P.gain)}">${P.gain != null ? `${arrow(P.gain)} ${fmtKRW(Math.abs(P.gain))}` : '–'}</b><span class="${dir(P.gain)}" style="font-weight:600">${P.gainPct != null ? Math.abs(P.gainPct).toFixed(2) + '%' : '평균 매수가를 넣으면 보여요'}</span></div></div>`;
+  let h = `<div class="mon"><span>${at ? `${at.getHours()}:${String(at.getMinutes()).padStart(2, '0')} 기준` : '시세 받는 중…'}</span><button data-act="refresh" style="font-weight:700;color:var(--ink)">새로고침</button></div>`;
+  if (P.gainPct != null) h += `<div class="hero ${dir(P.gain)}">${signedPct(P.gainPct)}</div>
+    <div class="hero-sub"><span>내 평단 대비 수익률</span><b class="${dir(P.gain)}" style="font-size:16px">${signedKRW(P.gain)}</b></div>`;
+  else h += `<div class="hero">${P.total != null ? fmtKRW(P.total) : '–'}</div>
+    <div class="hero-sub"><span>총 평가금액 · 평단을 넣으면 수익률을 보여줘요</span></div>`;
+  h += `<div class="three"><div>평가금액<b>${P.total != null ? fmtKRW(P.total) : '–'}</b>${eur && P.total ? `<span class="mut">≈ ${fmtEUR(P.total / eur)}</span>` : ''}</div>
+    <div>산 돈 (평단)<b>${P.cost != null ? fmtKRW(P.cost) : '–'}</b></div>
+    <div>오늘<b class="${dir(P.today)}" style="font-size:14px">${P.todayPct != null ? pctTxt(P.todayPct) : '–'}</b></div></div>`;
+  if (P.missing) h += `<div class="note-line">평단이 없는 종목 ${P.missing}개는 수익률에서 빠져요. 종목을 눌러 평단을 넣어 주세요.</div>`;
   const rows = list.map(x => ({ x, v: hv(x) })).sort((a, b) => (b.v.val ?? -1) - (a.v.val ?? -1));
-  h += `<section><h5><span>내 종목 ${list.length}</span><button class="r" data-act="stock-add">${ic('plus', 15, 2.4)} 추가</button></h5>`;
+  h += `<section><h5><span>내 종목 ${list.length}</span><button class="pill" data-act="stock-add">${ic('plus', 15, 2.4)} 종목 추가</button></h5>`;
   for (const { x, v } of rows) {
-    const q = v.q, chg = q?.chg;
+    const q = v.q, cur = q?.cur || x.cur;
     const mo = q?.closes?.length > 1 ? q.closes.at(-1) - q.closes[0] : 0;
+    const g = v.gainPct;
     h += `<button class="stock" data-act="stock" data-id="${x.id}">
-      <span style="min-width:0"><div class="nm">${esc(x.name || x.sym)}</div><div class="t2">${+x.qty.toFixed(6)}주${x.avg ? ` · 평단 ${fmtCur(q?.cur || x.cur, x.avg)}` : ''}${v.gainPct != null ? ` · <span class="${dir(v.gainPct)}">${v.gainPct > 0 ? '+' : ''}${v.gainPct.toFixed(1)}%</span>` : ''}</div></span>
-      ${spark(q?.closes, dir(mo))}
-      <span class="right"><b>${v.val != null ? fmtKRW(v.val) : q ? fmtCur(q.cur, q.p * x.qty) : '–'}</b><span class="${dir(chg)}">${q ? pctTxt(chg) : '시세 없음'}</span></span></button>`;
+      <span style="min-width:0"><div class="nm">${esc(x.name || x.sym)}</div><div class="t2">${+x.qty.toFixed(6)}주 · ${x.avg ? `평단 ${fmtCur(cur, x.avg)}` : '<b style="color:var(--ink)">평단 넣기</b>'}</div><div class="t2">지금 ${q ? fmtCur(cur, q.p) : '–'}${q?.chg != null ? ` · 오늘 ${signedPct(q.chg)}` : ''}</div></span>
+      ${spark(q?.closes, g != null ? dir(g) : dir(mo), x.avg)}
+      <span class="right">${g != null
+        ? `<b class="${dir(g)}">${arrow(g)} ${Math.abs(g).toFixed(2)}%</b><div class="${dir(g)}">${v.gain != null ? signedKRW(v.gain) : ''}</div><div class="mut">${v.val != null ? fmtKRW(v.val) : ''}</div>`
+        : `<b>${v.val != null ? fmtKRW(v.val) : q ? fmtCur(q.cur, q.p * x.qty) : '–'}</b><div class="mut">${q ? '' : '시세 없음'}</div>`}</span></button>`;
   }
-  h += `</section><p class="small-note">빨강 ▲ 오름 · 파랑 ▼ 내림 (오늘, 어제 종가 대비). 작은 그래프는 최근 1개월. 시세는 야후 파이낸스로 15~20분 늦을 수 있어요. 미국 주식은 지금 환율로 원화로 바꿔 보여줘요.</p>`;
+  h += `</section><p class="small-note">수익률은 내 평단 대비예요: 빨강 ▲ = 평단보다 올라 있음, 파랑 ▼ = 평단보다 내려 있음. 작은 그래프는 최근 1개월, 점선은 내 평단. 시세는 야후 파이낸스로 15~20분 늦을 수 있어요. 미국 주식은 지금 환율로 원화로 바꿔 보여줘요.</p>`;
   return h;
 }
 let quoting = false;
@@ -608,7 +647,7 @@ async function refreshQuotes(force) {
 const $wrap = document.getElementById('sheet-wrap'), $sheet = document.getElementById('sheet');
 const sheetOpen = () => !$wrap.hidden;
 function openSheet(html) { $sheet.innerHTML = html; $wrap.hidden = false; $sheet.scrollTop = 0; document.body.style.overflow = 'hidden'; }
-function closeSheet() { $wrap.hidden = true; $sheet.innerHTML = ''; document.body.style.overflow = ''; render(); }
+function closeSheet() { $wrap.hidden = true; $sheet.innerHTML = ''; document.body.style.overflow = ''; if (window.__reloadAfterSheet) { setTimeout(() => location.reload(), 600); } render(); }
 function toast(msg) { const t = document.getElementById('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => t.hidden = true, 2600); }
 const shTop = (l, r) => `<div class="sh-top"><span>${l} <span class="mut">${r || ''}</span></span><button data-act="close" aria-label="닫기">${ic('x', 20, 2)}</button></div>`;
 
@@ -618,7 +657,8 @@ function openTx(acc, id) {
   const st = {
     type: old?.type || 'out', date: old?.date || (V.ym === ymOf(today()) || V.mode === 'year' ? today() : V.ym + '-01'),
     cat: old?.cat || null, memo: old?.memo || '',
-    amount: old?.amount != null ? String(old.amount).replace('.', acc === 'de' ? ',' : '.') : '',
+    amount: old?.amount != null ? String(Math.abs(old.amount)).replace('.', acc === 'de' ? ',' : '.') : '',
+    dir: old?.type === 'save' && old.amount < 0 ? -1 : 1, // 저금: 1 = 넣음, -1 = 꺼냄
     eur: old?.eur != null ? String(old.eur).replace('.', ',') : '', krw: old?.krw != null ? String(old.krw) : '', fee: old?.fee != null ? String(old.fee).replace('.', ',') : '',
     krwTouched: !!old,
   };
@@ -629,9 +669,10 @@ function openTx(acc, id) {
     let h = shTop(old ? '기록 고치기' : '새 기록', A.name) + `<div class="types">
         <button data-t="out" class="${st.type === 'out' ? 'on' : ''}">지출</button>
         <button data-t="in" class="${st.type === 'in' ? 'on' : ''}">${A.inLabel}</button>
-        <button data-t="xfer" class="${isX ? 'on' : ''}">${A.xferLabel}</button></div>`;
+        <button data-t="xfer" class="${isX ? 'on' : ''}">${A.xferLabel}</button>${acc === 'de' ? `<button data-t="save" class="${st.type === 'save' ? 'on' : ''}">저금</button>` : ''}</div>`;
     if (!isX) {
       h += `<div class="big-in"><span>${A.cur}</span><input id="f-amt" inputmode="decimal" autocomplete="off" value="${esc(st.amount)}" placeholder="0" aria-label="금액"></div><div class="hint" id="h-amt"></div>`;
+      if (st.type === 'save') h += `<div class="chips" style="margin:0 0 16px"><button class="chip${st.dir > 0 ? ' on' : ''}" data-dir="1">저금에 넣었어요</button><button class="chip${st.dir < 0 ? ' on' : ''}" data-dir="-1">저금에서 꺼냈어요</button></div>`;
       if (st.type === 'out') {
         const list = [...cats(acc), ...(st.cat && !cats(acc).includes(st.cat) ? [st.cat] : [])];
         h += `<div class="cgrid">${list.map(c => `<button data-c="${esc(c)}" class="${st.cat === c ? 'on' : ''}"><span class="ring">${ic(catIcon(c), 22, 1.6)}</span><span class="lbl">${esc(c)}</span></button>`).join('')}</div>`;
@@ -646,7 +687,7 @@ function openTx(acc, id) {
         <p class="mut" style="font-size:13px;margin:-6px 0 16px">${r ? `오늘 환율 1€ = ${fmtKRW(r)}. 받은 돈은 자동으로 채워져요 — 실제 들어온 금액으로 고쳐 주세요.` : '환율을 받는 중…'}</p>`;
     }
     h += `<div class="fields"><label class="f"><small>날짜</small><input class="inp" type="date" id="f-date" value="${st.date}"></label>
-      <label class="f"><small>메모</small><input class="inp" id="f-memo" value="${esc(st.memo)}" placeholder="${st.type === 'out' ? '예: 레베' : st.type === 'in' ? '예: 월급' : ''}" maxlength="200"></label></div>`;
+      <label class="f"><small>메모</small><input class="inp" id="f-memo" value="${esc(st.memo)}" placeholder="${st.type === 'out' ? '예: 레베' : st.type === 'in' ? '예: 월급' : st.type === 'save' ? '예: 비상금' : ''}" maxlength="200"></label></div>`;
     if (st.type === 'in') h += `<div class="chips">${INCOME_HINTS[acc].map(m => `<button class="chip" data-m="${esc(m)}">${esc(m)}</button>`).join('')}</div>`;
     h += `<div class="actions">${old ? `<button class="btn danger" id="f-del">삭제</button>` : ''}<button class="btn" id="f-save">저장</button></div>`;
     $sheet.innerHTML = h;
@@ -662,6 +703,7 @@ function openTx(acc, id) {
     $sheet.querySelectorAll('[data-t]').forEach(b => b.onclick = () => { st.type = b.dataset.t; draw(); });
     $sheet.querySelectorAll('[data-c]').forEach(b => b.onclick = () => { st.cat = st.cat === b.dataset.c ? null : b.dataset.c; $sheet.querySelectorAll('[data-c]').forEach(x => x.classList.toggle('on', x.dataset.c === st.cat)); });
     $sheet.querySelectorAll('[data-m]').forEach(b => b.onclick = () => { st.memo = b.dataset.m; document.getElementById('f-memo').value = st.memo; });
+    $sheet.querySelectorAll('[data-dir]').forEach(b => b.onclick = () => { st.dir = +b.dataset.dir; $sheet.querySelectorAll('[data-dir]').forEach(x => x.classList.toggle('on', +x.dataset.dir === st.dir)); });
     const on = (id, fn) => { const el = document.getElementById(id); if (el) el.oninput = () => { fn(el.value); hint(); }; };
     on('f-amt', v => st.amount = v);
     on('f-eur', v => {
@@ -687,6 +729,7 @@ function openTx(acc, id) {
         const amount = parseAmt(st.amount, acc === 'kr');
         if (!amount) return toast('금액을 넣어 주세요');
         rec = { acc, type: st.type, date: st.date, amount: acc === 'kr' ? Math.round(amount) : Math.round(amount * 100) / 100, u: Date.now() };
+        if (st.type === 'save') { rec.amount *= st.dir; if (old?.n) rec.n = old.n; }
         if (st.type === 'out') rec.cat = st.cat || '기타';
         if (st.memo.trim()) rec.memo = st.memo.trim();
         if (old?.src) rec.src = old.src;
@@ -732,8 +775,8 @@ function pickStock(x) {
   openSheet(shTop('종목 추가', '한국 증권 계좌') + `<h2>${esc(x.name)}</h2><p class="mut" style="margin:0 0 6px;font-size:13px">${esc(x.sym)} · ${esc(x.ex || '')}</p>
     <div id="p-now" style="font-size:20px;font-weight:800;margin-bottom:16px">시세 받는 중…</div>
     <div class="fields"><label class="f"><small>갖고 있는 수량 (주)</small><input class="inp lg" id="p-qty" inputmode="decimal" placeholder="0"></label>
-    <label class="f"><small>평균 매수가 <span id="p-cur"></span></small><input class="inp lg" id="p-avg" inputmode="decimal" placeholder="몰라도 돼요"></label></div>
-    <p class="small-note" style="margin:-8px 0 16px">평균 매수가는 증권 앱의 '평균단가'예요. 수익 계산에만 써요.</p>
+    <label class="f"><small>평단 (평균 매수가) <span id="p-cur"></span></small><input class="inp lg" id="p-avg" inputmode="decimal" placeholder="0"></label></div>
+    <p class="small-note" style="margin:-8px 0 16px">평단은 증권 앱의 '평균단가'예요. 평단을 넣어야 내 평단 대비 수익률이 보여요.</p>
     <div class="actions"><button class="btn line" data-act="stock-add">뒤로</button><button class="btn" id="p-save">추가</button></div>`);
   let cur = x.sym.endsWith('.KS') || x.sym.endsWith('.KQ') ? 'KRW' : null;
   const show = () => { document.getElementById('p-cur').textContent = cur ? `(${curSym(cur)})` : ''; };
@@ -763,18 +806,21 @@ function openStock(id) {
   const draw = () => {
     const v = hv(x), q = v.q, cur = q?.cur || x.cur || 'KRW';
     $sheet.innerHTML = shTop(esc(x.sym), '') + `<h2>${esc(x.name || x.sym)}</h2>
-      <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:12px"><span style="font-size:30px;font-weight:800;letter-spacing:-.03em">${q ? fmtCur(cur, q.p) : '–'}</span>
-        ${q ? `<span class="${dir(q.chg)}" style="font-weight:700">${arrow(q.chg)} ${fmtCur(cur, Math.abs(q.p - q.prev))} (${Math.abs(q.chg).toFixed(2)}%)</span>` : ''}</div>
+      ${v.gainPct != null ? `<div class="${dir(v.gainPct)}" style="font-size:34px;font-weight:800;letter-spacing:-.03em;line-height:1.1">${signedPct(v.gainPct)}</div>
+        <div class="mut" style="font-size:13.5px;margin-bottom:8px">내 평단 ${fmtCur(cur, x.avg)} 대비${v.gain != null ? ` · <b class="${dir(v.gain)}">${signedKRW(v.gain)}</b>` : ''}</div>`
+        : `<div class="mut" style="font-size:13.5px;margin-bottom:6px">아래에 평단을 넣으면 내 평단 대비 수익률을 보여줘요</div>`}
+      <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:12px"><span style="font-size:20px;font-weight:800">지금 ${q ? fmtCur(cur, q.p) : '–'}</span>
+        ${q ? `<span class="mut" style="font-size:13.5px">오늘 ${signedPct(q.chg)}</span>` : ''}</div>
       <div class="types" style="font-size:14px;gap:16px">${[['1mo', '1개월'], ['3mo', '3개월'], ['1y', '1년'], ['5y', '5년']].map(([k, l]) => `<button data-r="${k}" class="${range === k ? 'on' : ''}">${l}</button>`).join('')}</div>
       <div class="chart" id="chart"><p class="small-note" style="padding-top:70px;text-align:center">그래프 받는 중…</p></div>
       <div class="sec"><dl class="kv">
         <dt>평가금액</dt><dd>${v.val != null ? fmtKRW(v.val) : '–'}${cur !== 'KRW' && q ? `<br><span class="mut" style="font-weight:500;font-size:13px">${fmtCur(cur, q.p * x.qty)} · 1${curSym(cur)} = ${fmtKRW(v.fx || 0)}</span>` : ''}</dd>
-        <dt>오늘</dt><dd class="${dir(v.today)}">${v.today != null ? `${arrow(v.today)} ${fmtKRW(Math.abs(v.today))}` : '–'}</dd>
-        ${x.avg ? `<dt>수익</dt><dd class="${dir(v.gainPct)}">${v.gain != null ? `${arrow(v.gain)} ${fmtKRW(Math.abs(v.gain))} ` : ''}(${v.gainPct > 0 ? '+' : ''}${v.gainPct?.toFixed(2)}%)</dd>` : ''}
+        ${x.avg ? `<dt>산 돈 (평단 × 수량)</dt><dd>${v.cost != null ? fmtKRW(v.cost) : '–'}</dd><dt>평단 대비 수익</dt><dd class="${dir(v.gainPct)}">${v.gain != null ? signedKRW(v.gain) : '–'}</dd>` : ''}
+        <dt>오늘 (어제 종가 대비)</dt><dd class="${dir(v.today)}">${v.today != null ? signedKRW(v.today) : '–'}</dd>
       </dl></div>
       <div class="sec"><h3>내 보유</h3><div class="fields">
         <label class="f"><small>수량 (주)</small><input class="inp" id="e-qty" inputmode="decimal" value="${+x.qty.toFixed(6)}"></label>
-        <label class="f"><small>평균 매수가 (${curSym(cur)})</small><input class="inp" id="e-avg" inputmode="decimal" value="${x.avg ?? ''}" placeholder="몰라도 돼요"></label></div>
+        <label class="f"><small>평단 (${curSym(cur)})</small><input class="inp" id="e-avg" inputmode="decimal" value="${x.avg ?? ''}" placeholder="증권 앱의 평균단가"></label></div>
         <div class="actions"><button class="btn danger" id="e-del">종목 지우기</button><button class="btn" id="e-save">저장</button></div></div>`;
     $sheet.querySelectorAll('[data-r]').forEach(b => b.onclick = () => { range = b.dataset.r; draw(); });
     document.getElementById('e-save').onclick = () => {
@@ -786,11 +832,11 @@ function openStock(id) {
       change('stocks', id, rec); closeSheet(); toast('저장했어요');
     };
     document.getElementById('e-del').onclick = () => { if (confirm(`${x.name || x.sym}을(를) 목록에서 지울까요?`)) { change('stocks', id, null); closeSheet(); toast('지웠어요'); } };
-    loadChart(x.sym, range, cur);
+    loadChart(x.sym, range, cur, x.avg);
   };
   openSheet(''); draw();
 }
-async function loadChart(sym, range, cur) {
+async function loadChart(sym, range, cur, avg) {
   const k = `${sym}|${range}`;
   let c = chartCache[k];
   if (!c) {
@@ -802,19 +848,23 @@ async function loadChart(sym, range, cur) {
   if (q && range !== '5y') { closes.push(q.p); ts.push(q.t || Date.now() / 1000); }
   if (closes.length < 2) { el.innerHTML = '<p class="small-note" style="padding-top:70px;text-align:center">자료가 없어요</p>'; return; }
   const W = el.clientWidth || 320, H = 180, padT = 24, padB = 20;
-  const min = Math.min(...closes), max = Math.max(...closes), rng = max - min || 1;
+  // 평단도 그래프 안에 보이게 (점선)
+  const all = avg ? [...closes, avg] : closes;
+  const min = Math.min(...all), max = Math.max(...all), rng = max - min || 1;
   const X = i => i / (closes.length - 1) * W, Y = v => padT + (1 - (v - min) / rng) * (H - padT - padB);
-  const cls = dir(closes.at(-1) - closes[0]), col = `var(--${cls === 'flat' ? 'mut' : cls})`;
+  const cls = dir(avg ? closes.at(-1) - avg : closes.at(-1) - closes[0]), col = `var(--${cls === 'flat' ? 'mut' : cls})`;
+  const avgLine = avg ? `<line x1="0" x2="${W}" y1="${Y(avg).toFixed(1)}" y2="${Y(avg).toFixed(1)}" stroke="var(--ink)" stroke-width="1.2" stroke-dasharray="4 4"/>
+    <text x="${W}" y="${(Y(avg) - 5).toFixed(1)}" font-size="11.5" font-weight="700" fill="var(--ink)" text-anchor="end">내 평단 ${fmtCur(cur, avg)}</text>` : '';
   const d = closes.map((v, i) => `${i ? 'L' : 'M'}${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join('');
   const fd = t => { const x = new Date(t * 1000); return range === '5y' || range === '1y' ? `${x.getFullYear() % 100}.${x.getMonth() + 1}.${x.getDate()}` : `${x.getMonth() + 1}.${x.getDate()}`; };
   const chg = (closes.at(-1) / closes[0] - 1) * 100;
   el.innerHTML = `<svg viewBox="0 0 ${W} ${H}">
-    <line x1="0" x2="${W}" y1="${Y(closes[0]).toFixed(1)}" y2="${Y(closes[0]).toFixed(1)}" stroke="var(--line)" stroke-dasharray="3 4"/>
     <line x1="0" x2="${W}" y1="${H - padB}" y2="${H - padB}" stroke="var(--ink)" stroke-width="1.5"/>
+    ${avgLine}
     <path d="${d}" fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round"/>
     <text x="0" y="${H - 4}" font-size="11" fill="var(--mut)">${fd(ts[0])}</text>
     <text x="${W}" y="${H - 4}" font-size="11" fill="var(--mut)" text-anchor="end">${fd(ts.at(-1))}</text>
-    <text x="0" y="12" font-size="12" font-weight="700" fill="var(--mut)">기간 <tspan fill="${col}">${arrow(chg)} ${Math.abs(chg).toFixed(1)}%</tspan> · 최고 ${fmtCur(cur, max)} · 최저 ${fmtCur(cur, min)}</text>
+    <text x="0" y="12" font-size="12" font-weight="700" fill="var(--mut)">기간 <tspan fill="var(--${dir(chg) === 'flat' ? 'mut' : dir(chg)})">${arrow(chg)} ${Math.abs(chg).toFixed(1)}%</tspan> · 최고 ${fmtCur(cur, max)} · 최저 ${fmtCur(cur, min)}</text>
     <g id="cross" visibility="hidden"><line id="cx" y1="${padT}" y2="${H - padB}" stroke="var(--mut)"/><circle id="cd" r="4.5" fill="${col}" stroke="var(--bg)" stroke-width="2"/></g>
   </svg><div class="tip" id="ctip" hidden></div>`;
   const svg = el.querySelector('svg'), tip = el.querySelector('#ctip');
@@ -886,35 +936,36 @@ function openImport() {
         <p class="mut" style="margin:6px 0 18px">N26 앱이나 웹(app.n26.com)에서 받은 <b>PDF</b>나 <b>CSV</b>를 골라 주세요. 파일은 이 휴대폰 안에서만 읽고, 어디로도 보내지 않아요.</p>
         ${st.step === 'busy' ? `<p style="font-weight:700">읽는 중… ${esc(st.name)}</p>` : `<label class="btn wide" style="cursor:pointer">파일 고르기<input type="file" id="i-file" accept=".pdf,.csv,application/pdf,text/csv,text/comma-separated-values" hidden></label>`}
         ${st.err ? `<p class="up" style="margin-top:12px;font-weight:600">${esc(st.err)}</p>` : ''}
-        <p class="small-note" style="margin-top:18px">· 넣기 전에 목록을 보여줘요. 항목을 고치면 다음부터 그 가게는 알아서 그 항목으로 골라요.<br>· 이미 넣은 거래는 다시 넣지 않아요 (같은 파일을 또 올려도 괜찮아요).<br>· 내 Space(비상금 등)로 옮긴 돈은 지출이 아니라 빼 둬요.<br>· Remitly 같은 송금은 '한국으로 송금'으로 넣고, 원화는 그날 환율로 채워요 (나중에 실제 금액으로 고칠 수 있어요).</p>`;
+        <p class="small-note" style="margin-top:18px">· 넣기 전에 목록을 보여줘요. 항목을 고치면 다음부터 그 가게는 알아서 그 항목으로 골라요.<br>· 이미 넣은 거래는 다시 넣지 않아요 (같은 파일을 또 올려도 괜찮아요).<br>· 내 Space(비상금 등)로 옮긴 돈은 지출이 아니라 '저금'으로, 한 달에 한 줄로 묶어 넣어요.<br>· Remitly 같은 송금은 '한국으로 송금'으로 넣고, 원화는 그날 환율로 채워요 (나중에 실제 금액으로 고칠 수 있어요).</p>`;
       const f = document.getElementById('i-file');
       if (f) f.onchange = () => f.files[0] && readFile(f.files[0]);
       return;
     }
-    const inRange = st.rows.filter(x => !x.dup && x.r.date >= st.from);
+    const inRange = st.rows.filter(x => !x.dup && !x.hidden && x.r.date >= st.from);
     const take = inRange.filter(x => x.act !== 'skip');
     const counts = {
       all: take.length, check: take.filter(x => x.unknown && x.act === `cat:${catForIcon(null)}`).length,
-      xfer: take.filter(x => x.act === 'xfer').length, in: take.filter(x => x.act === 'in').length, skip: inRange.length - take.length,
+      xfer: take.filter(x => x.act === 'xfer').length, in: take.filter(x => x.act === 'in').length, save: take.filter(x => x.act === 'save').length, skip: inRange.length - take.length,
     };
-    const shown = st.filter === 'skip' ? inRange.filter(x => x.act === 'skip')
+    const shown = (st.filter === 'skip' ? inRange.filter(x => x.act === 'skip')
       : st.filter === 'check' ? take.filter(x => x.unknown && x.act === `cat:${catForIcon(null)}`)
-      : st.filter === 'xfer' ? take.filter(x => x.act === 'xfer') : st.filter === 'in' ? take.filter(x => x.act === 'in') : take;
-    const sumOut = take.filter(x => x.r.amount < 0).reduce((a, x) => a - x.r.amount, 0);
+      : ['xfer', 'in', 'save'].includes(st.filter) ? take.filter(x => x.act === st.filter) : take).slice().sort((a, b) => a.r.date.localeCompare(b.r.date));
+    const sumOut = take.filter(x => x.r.amount < 0 && x.act !== 'save' && x.act !== 'xfer').reduce((a, x) => a - x.r.amount, 0);
     const opt = x => {
+      if (x.save) return `<option value="save"${sel(x) === 'save' ? ' selected' : ''}>저금</option><option value="skip"${sel(x) === 'skip' ? ' selected' : ''}>빼기</option>`;
       if (x.r.amount > 0) return `<option value="in"${sel(x) === 'in' ? ' selected' : ''}>수입</option><option value="skip"${sel(x) === 'skip' ? ' selected' : ''}>빼기</option>`;
       return cats('de').map(c => `<option value="cat:${esc(c)}"${sel(x) === 'cat:' + c ? ' selected' : ''}>${esc(c)}</option>`).join('') +
         `<option value="xfer"${sel(x) === 'xfer' ? ' selected' : ''}>한국으로 송금</option><option value="skip"${sel(x) === 'skip' ? ' selected' : ''}>빼기</option>`;
     };
-    const icoFor = x => x.act === 'xfer' ? 'xfer' : x.act === 'in' ? 'in' : x.act === 'skip' ? 'x' : catIcon(x.act.slice(4));
+    const icoFor = x => x.act === 'xfer' ? 'xfer' : x.act === 'in' ? 'in' : x.act === 'save' ? 'piggy' : x.act === 'skip' ? 'x' : catIcon(x.act.slice(4));
     let h = shTop('N26 가져오기', esc(st.name)) + `<h2>${take.length}건 넣기</h2>
-      <p class="mut" style="margin:4px 0 12px;font-size:13.5px">파일에서 ${st.total}건 읽음${st.dup ? ` · 이미 있는 ${st.dup}건 건너뜀` : ''}${st.internal ? ` · 내 Space 이동 ${st.internal}건 뺌` : ''}<br>지출 합계 ${fmtEUR(sumOut)}</p>
+      <p class="mut" style="margin:4px 0 12px;font-size:13.5px">파일에서 ${st.total}건 읽음${st.dup ? ` · 이미 있는 ${st.dup}건 건너뜀` : ''}${st.internal ? ` · 내 Space 이동 ${st.internal}건은 달마다 '저금' 한 줄로 묶음` : ''}<br>지출 합계 ${fmtEUR(sumOut)}</p>
       <div class="fields" style="margin-bottom:10px"><label class="f"><small>이 날짜부터</small><input class="inp" type="date" id="i-from" value="${st.from}"></label><span></span></div>
-      <div class="types" style="font-size:14px;gap:14px;flex-wrap:wrap">${[['all', '전체'], ['check', '확인 필요'], ['xfer', '송금'], ['in', '수입'], ['skip', '뺀 것']].map(([k, l]) => `<button data-f="${k}" class="${st.filter === k ? 'on' : ''}">${l} ${counts[k]}</button>`).join('')}</div>
+      <div class="types" style="font-size:14px;gap:14px;flex-wrap:wrap">${[['all', '전체'], ['check', '확인 필요'], ['xfer', '송금'], ['in', '수입'], ['save', '저금'], ['skip', '뺀 것']].map(([k, l]) => `<button data-f="${k}" class="${st.filter === k ? 'on' : ''}">${l} ${counts[k]}</button>`).join('')}</div>
       ${st.filter === 'check' ? `<p class="small-note" style="margin:6px 0 0">어느 항목인지 몰라서 '${esc(catForIcon(null))}'로 둔 거예요. 고르면 같은 곳의 다른 거래도 같이 바뀌고, 다음부터 기억해요.</p>` : ''}
       <div class="imp-list">${shown.map(x => `<div class="imp${x.act === 'skip' ? ' off' : ''}">
           <span class="ring">${ic(icoFor(x), 17)}</span>
-          <span class="m"><div class="t1">${esc(x.memo)}</div><div class="t2">${dayLabel(x.r.date)}${x.act === 'xfer' ? ` · €${(x.fee.eur).toLocaleString('ko-KR')}${x.fee.fee ? ` + 수수료 ${fmtEUR(x.fee.fee)}` : ''}` : ''}${x.r.ref && x.act !== 'xfer' ? ' · ' + esc(x.r.ref.slice(0, 40)) : ''}</div></span>
+          <span class="m"><div class="t1">${esc(x.memo)}</div><div class="t2">${x.save ? `${+x.save.ym.slice(5)}월 · ${x.save.n}건 묶음 (${x.save.amount >= 0 ? '저금에 넣음' : '저금에서 꺼냄'})` : dayLabel(x.r.date)}${x.act === 'xfer' ? ` · €${(x.fee.eur).toLocaleString('ko-KR')}${x.fee.fee ? ` + 수수료 ${fmtEUR(x.fee.fee)}` : ''}` : ''}${x.r.ref && x.act !== 'xfer' ? ' · ' + esc(x.r.ref.slice(0, 40)) : ''}</div></span>
           <span class="r"><b class="num">${x.r.amount > 0 ? '+' : '−'}${fmtEUR(Math.abs(x.r.amount))}</b><select data-i="${x.i}" aria-label="항목">${opt(x)}</select></span></div>`).join('') || '<p class="empty">없어요</p>'}</div>
       <div class="imp-bar"><button class="btn wide" id="i-go"${take.length ? '' : ' disabled'}>${take.length}건 넣기</button></div>`;
     $sheet.innerHTML = h;
@@ -949,7 +1000,24 @@ function openImport() {
         const act = s.type === 'out' ? `cat:${s.cat && cats('de').includes(s.cat) ? s.cat : catForIcon(s.key)}` : s.type;
         return { i, r, act, pkey: s.pkey, memo: s.memo || r.partner || '(이름 없음)', unknown: s.type === 'out' && !s.key && !s.cat, internal: s.why === 'internal', dup: have.has(r.src), fee: N26.splitFee(r.amount) };
       });
-      st.total = recs.length; st.dup = st.rows.filter(x => x.dup).length; st.internal = st.rows.filter(x => x.internal && !x.dup).length;
+      // 내 Space 이동 → 달마다 '저금' 한 줄 (src = n26save:YYYY-MM). 다시 가져오면 그 달 합계를 새로 고침
+      const groups = {};
+      for (const x of st.rows) if (x.internal && !D.rules[x.pkey]) {
+        x.hidden = true;
+        const ym = x.r.date.slice(0, 7), g = groups[ym] = groups[ym] || { sum: 0, n: 0, last: x.r.date, name: '' };
+        g.sum += x.r.amount; g.n++; if (x.r.date > g.last) g.last = x.r.date;
+        if (!g.name && x.r.partner && x.r.partner !== 'Space') g.name = x.r.partner;
+      }
+      const bySrc = {};
+      for (const [id, t] of Object.entries(D.tx)) if (t.src) bySrc[t.src] = id;
+      for (const [ym, g] of Object.entries(groups)) {
+        const amount = -Math.round(g.sum * 100) / 100; // 메인 계좌에서 나간 만큼 저금 (+), 꺼내 쓴 달은 (−)
+        if (!amount) continue;
+        const src = `n26save:${ym}`, oldId = bySrc[src], old = oldId && D.tx[oldId];
+        st.rows.push({ i: st.rows.length, r: { date: g.last, amount: -amount, partner: g.name, ref: '', src }, act: 'save', pkey: '', memo: g.name || '저금',
+          save: { amount, n: g.n, ym, oldId }, unknown: false, internal: false, dup: !!(old && old.amount === amount && old.n === g.n), fee: { eur: 0, fee: 0 } });
+      }
+      st.total = recs.length; st.dup = st.rows.filter(x => x.dup && !x.save).length; st.internal = st.rows.filter(x => x.hidden).length;
       st.from = recs[0].date; st.step = 'list'; st.filter = 'all';
     } catch (e) {
       st.step = 'pick'; st.err = e && e.message && !/^pdf\.js$/.test(e.message) ? e.message : '파일을 못 읽었어요. 인터넷 연결(PDF 읽기 도구를 받아야 해요)과 파일을 확인해 주세요.';
@@ -964,6 +1032,7 @@ function openImport() {
     const now = Date.now();
     const entries = take.map((x, k) => {
       const r = x.r, base = { date: r.date, src: r.src, u: now + k };
+      if (x.act === 'save') return [x.save.oldId || newId(), { acc: 'de', type: 'save', ...base, amount: x.save.amount, n: x.save.n, memo: x.memo }];
       if (x.act === 'xfer') {
         const rate = rateOn(rates, r.date);
         return [newId(), { type: 'xfer', ...base, eur: x.fee.eur, ...(x.fee.fee ? { fee: x.fee.fee } : {}), krw: Math.round(x.fee.eur * (rate || 0)), est: true, memo: x.memo }];
@@ -980,15 +1049,44 @@ function openImport() {
   openSheet(''); draw();
 }
 
+const BAL_ROWS = [['kr', '한국 계좌 잔액 (₩)'], ['de', '독일 계좌 잔액 (€)'], ['sv', '모은 돈 · 저금 Space 잔액 (€)']];
+
+// 다른 기기의 가계부에 이 기기를 연결 (링크나 키를 붙여넣기).
+// 아이폰 홈 화면 앱은 Safari 와 저장소가 따로라서 링크를 열어도 연결이 안 됨 → 앱 안에서 붙여넣어야 함
+async function connectKey(raw) {
+  const m = String(raw || '').match(/(?:k=)?([A-Za-z0-9]{24,64})/);
+  if (!m) return toast('링크나 키를 확인해 주세요');
+  const k = m[1];
+  if (k === KEY) return toast('이미 이 가계부예요');
+  let there;
+  try { const r = await fetch(`${API}/d/${k}`, { cache: 'no-store' }); if (!r.ok) throw 0; there = normalize(await r.json()); }
+  catch { return toast('연결하지 못했어요. 인터넷을 확인해 주세요'); }
+  const nThere = Object.keys(there.tx).length, sThere = Object.keys(there.stocks).length;
+  if (!confirm(`그 가계부(기록 ${nThere}건, 주식 ${sThere}개)로 이 기기를 연결할까요?`)) return;
+  // 이 기기에만 있던 것도 합치기 (같은 가져오기 기록·같은 종목은 건너뜀)
+  const srcs = new Set(Object.values(there.tx).map(t => t.src).filter(Boolean)), syms = new Set(Object.values(there.stocks).map(s => s.sym));
+  const myTx = Object.entries(D.tx).filter(([id, t]) => !there.tx[id] && !(t.src && srcs.has(t.src)));
+  const mySt = Object.entries(D.stocks).filter(([id, s]) => !there.stocks[id] && !syms.has(s.sym));
+  let q = {};
+  if ((myTx.length || mySt.length) && confirm(`이 기기에만 있는 기록 ${myTx.length}건, 주식 ${mySt.length}개도 그 가계부에 합칠까요?`)) {
+    q = { tx: Object.fromEntries(myTx), stocks: Object.fromEntries(mySt) };
+    for (const k2 of ['ico', 'rules']) { const add = Object.fromEntries(Object.entries(D[k2] || {}).filter(([n]) => !(n in there[k2]))); if (Object.keys(add).length) q[k2] = add; }
+  }
+  KEY = k; lsSet(LS.key, KEY); lsSet('budget:pulled', true);
+  Q = q; lsSet(LS.queue, Q);
+  D = applyQueue(there, Q); saveLocal();
+  closeSheet(); toast('연결했어요'); scheduleFlush(50); refreshQuotes(true);
+}
+
 // 설정
 function openSettings() {
   let picking = null; // 아이콘 고르는 중인 항목 'acc|i'
   const draw = () => {
     let h = shTop('설정', '') + `<h2 style="margin-bottom:14px">설정</h2>`;
     h += `<div class="sec"><h3>통장 잔액 맞추기</h3><p class="mut">은행 앱에 보이는 잔액과 날짜를 적으면, 그 뒤 기록으로 지금 잔액을 계속 계산해요.</p>`;
-    for (const acc of ['kr', 'de']) {
+    for (const [acc, label] of BAL_ROWS) {
       const b = D.bal[acc] || {};
-      h += `<div class="fields" style="margin-bottom:12px"><label class="f"><small>${ACC[acc].name} 잔액 (${ACC[acc].cur})</small><input class="inp" id="b-${acc}" inputmode="decimal" value="${b.amount ?? ''}" placeholder="비워 두면 안 씀"></label>
+      h += `<div class="fields" style="margin-bottom:12px"><label class="f"><small>${label}</small><input class="inp" id="b-${acc}" inputmode="decimal" value="${b.amount ?? ''}" placeholder="비워 두면 안 씀"></label>
         <label class="f"><small>이 날 끝 기준</small><input class="inp" type="date" id="bd-${acc}" value="${b.date || today()}"></label></div>`;
     }
     h += `<button class="btn line wide" id="b-save">잔액 저장</button></div>`;
@@ -1008,14 +1106,17 @@ function openSettings() {
     h += `<div class="sec"><h3>다른 기기에서 같이 보기</h3><p class="mut">이 링크를 다른 기기(아이패드, 컴퓨터)에서 열면 같은 가계부가 보여요. <b>링크를 아는 사람은 누구나 볼 수 있으니</b> 다른 사람에게 보내지 마세요.</p>
       <div class="code" id="k-link">${esc(link)}</div>
       <div class="actions" style="margin-top:10px"><button class="btn line" id="k-copy">링크 복사</button></div>
+      <p class="mut" style="margin:16px 0 6px"><b>다른 기기에서 만든 가계부</b>를 이 기기에서 보려면, 그 기기 설정의 링크를 복사해서 여기에 붙여넣으세요. 아이폰 홈 화면 앱은 링크를 열어서는 연결이 안 되고, 여기에 붙여넣어야 해요.</p>
+      <div class="cat-edit"><input class="inp" id="k-in" placeholder="링크나 키 붙여넣기" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="btn small" id="k-go">연결</button></div>
       <p class="small-note">${Object.keys(Q).length ? (sync.state === 'off' ? '⚠︎ 인터넷이 안 돼서 아직 못 보낸 기록이 있어요. 연결되면 자동으로 보내요.' : '보내는 중…') : sync.at ? `서버에 저장됨 · ${new Date(sync.at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}` : ''}</p></div>`;
     h += `<div class="sec"><h3>백업</h3><div class="actions"><button class="btn line" id="x-exp">파일로 내보내기</button><label class="btn line" style="cursor:pointer">파일에서 되살리기<input type="file" id="x-imp" accept="application/json,.json" hidden></label></div></div>`;
+    h += `<p class="small-note" style="text-align:center">버전 ${VERSION}</p>`;
     const top = $sheet.scrollTop;
     $sheet.innerHTML = h;
     $sheet.scrollTop = top;
 
     document.getElementById('b-save').onclick = () => {
-      for (const acc of ['kr', 'de']) {
+      for (const [acc] of BAL_ROWS) {
         const raw = document.getElementById(`b-${acc}`).value.trim(), dt = document.getElementById(`bd-${acc}`).value;
         const a = raw === '' ? null : (raw.startsWith('-') ? -1 : 1) * parseAmt(raw, acc === 'kr');
         const next = a == null || !isFinite(a) || !dt ? null : { amount: acc === 'kr' ? Math.round(a) : Math.round(a * 100) / 100, date: dt };
@@ -1057,6 +1158,7 @@ function openSettings() {
     });
     const rc = document.getElementById('r-clear');
     if (rc) rc.onclick = () => { if (confirm('가게별로 기억한 항목을 모두 지울까요? 넣어 둔 기록은 그대로예요.')) { changeMany('rules', Object.keys(D.rules).map(k => [k, null])); draw(); } };
+    document.getElementById('k-go').onclick = () => connectKey(document.getElementById('k-in').value);
     document.getElementById('k-copy').onclick = async () => {
       try { await navigator.clipboard.writeText(link); toast('복사했어요'); }
       catch { const r = document.createRange(); r.selectNodeContents(document.getElementById('k-link')); getSelection().removeAllRanges(); getSelection().addRange(r); toast('길게 눌러 복사해 주세요'); }
@@ -1122,7 +1224,20 @@ addEventListener('online', () => { scheduleFlush(50); pull(); });
 // 주식을 보고 있을 때는 1분마다 시세 새로
 setInterval(() => { if (document.visibilityState === 'visible' && V.tab !== 'de') refreshQuotes(); }, 60000);
 
-if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => {});
+// 새 버전이 올라오면 알아서 다시 열기: 앱을 다시 볼 때마다 sw.js 가 바뀌었는지 확인 → 바뀌었으면 새로고침
+// (홈 화면 앱은 뒤로 갔다 와도 페이지를 새로 읽지 않아서, 이게 없으면 예전 화면이 계속 남음)
+if ('serviceWorker' in navigator && location.protocol === 'https:') {
+  const hadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(reg => {
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reg.update().catch(() => {}); });
+  }).catch(() => {});
+  let reloading = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || reloading) return;
+    reloading = true;
+    if (sheetOpen()) window.__reloadAfterSheet = true; else location.reload();
+  });
+}
 </script>
 </body>
 </html>
