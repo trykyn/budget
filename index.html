@@ -219,7 +219,7 @@ label.f > small { display: block; font-size: 12px; color: var(--mut); font-weigh
 <script src="import.js"></script>
 <script>
 // ───────── 설정 ─────────
-const VERSION = '2026-11-23 · 6';
+const VERSION = '2026-11-23 · 7';
 const API = 'https://budget-sync.weekly-meals-reader.workers.dev';
 const APP_URL = 'https://trykyn.github.io/budget/';
 const LS = { key: 'budget:key', data: 'budget:data', queue: 'budget:queue', quotes: 'budget:quotes', view: 'budget:view' };
@@ -513,8 +513,12 @@ function renderAccount(acc) {
   let h = `<div class="mon">
     <div class="arrows"><button data-act="prev" aria-label="이전">${ic('left', 18, 2.2)}</button><span>${periodLabel()}</span><button data-act="next" aria-label="다음">${ic('right', 18, 2.2)}</button></div>
     <div class="mode"><button data-act="mode" data-v="month" class="${V.mode === 'month' ? 'on' : ''}">월</button><button data-act="mode" data-v="year" class="${V.mode === 'year' ? 'on' : ''}">연</button></div></div>
-    <div class="hero">${signed(f, s.net)}</div>
-    <div class="hero-sub"><span>${V.mode === 'year' ? '올해' : '이번 달'} 남은 돈</span>${bal != null ? `<button data-act="bal" data-v="${acc}">잔액 ${f(bal)} ›</button>` : `<button data-act="bal" data-v="${acc}">잔액 맞추기 ›</button>`}</div>`;
+    ${acc === 'kr'
+      // 한국 계좌는 소득이 없어서 '남은 돈' 대신 총잔액이 맨 위 (계좌별 잔액 + 그 뒤 기록)
+      ? `<div class="hero">${bal != null ? fmtKRW(bal) : '₩ –'}</div>
+    <div class="hero-sub"><span>한국 계좌 총잔액${(() => { const ks = krSnap(); if (!ks || ks.date === today()) return D.kr.accts.length ? ` · 계좌 ${D.kr.accts.length}개` : ''; const [, m, d] = ks.date.split('-').map(Number); return ` · ${m}월 ${d}일 잔액 + 그 뒤 기록`; })()}</span><button data-act="kr-accts">${bal != null ? '잔액 업데이트 ›' : '계좌 잔액 적기 ›'}</button></div>`
+      : `<div class="hero">${signed(f, s.net)}</div>
+    <div class="hero-sub"><span>${V.mode === 'year' ? '올해' : '이번 달'} 남은 돈</span>${bal != null ? `<button data-act="bal" data-v="${acc}">잔액 ${f(bal)} ›</button>` : `<button data-act="bal" data-v="${acc}">잔액 맞추기 ›</button>`}</div>`}`;
   if (acc === 'kr') {
     h += `<div class="three"><div>들어온 돈<b>${f(s.inc)}</b></div><div>나간 돈<b>${f(s.out)}</b></div><div>독일에서<b>${fmtEUR(s.xEur)}</b></div></div>`;
     if (s.xKrw) h += `<div class="note-line">${ic('xfer', 16)}<span>${fmtEUR(s.xEur)} 보내서 <b>${fmtKRW(s.xKrw)}</b> 받음 · 평균 1€ = ${fmtKRW(s.xKrw / s.xEur)}</span></div>`;
