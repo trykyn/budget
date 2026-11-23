@@ -146,6 +146,7 @@
     ['basket', /knuspr|\brewe\b|edeka|\baldi\b(?! talk)|\blidl\b|\bnetto\b|\bpenny\b|kaufland|\bhit\b|\bspar\b|asia ?markt|halal|supermarkt|denns|alnatura|bio company|rossmann|dm[- ]?drogerie|\bnorma\b|tegut|globus|lebensmittel/i],
     ['food', /restaurant|ristorante|trattoria|pizz|sushi|kebab|d[öo]ner|imbiss|bistro|mcdonald|burger|\bkfc\b|subway|lieferando|\bwolt\b|uber ?eats|starbucks|\bcaf[eé]\b|coffee|kaffee|konditorei|b[äa]e?cke|backhau|backstub|bakery|gastro|gelato|malatang|maltang|hansik|ramen|noodle/i],
     ['kid', /schule|\bkita\b|kindergarten|kinder|\bbaby|legoland|junior|spielwaren|\btoys?\b|jako-o|smyths|mytoys|\bhort\b/i],
+    ['lotus', /wellpass|egym|urban ?sports|fitness|\bgym\b|mcfit|john reed|sauna|therme|\bspa\b|massage|yoga|pilates|wellness|kosmetik|beauty|laser|nagelstudio|\bnails?\b|friseur|barber/i],
     ['suitcase', /booking\.com|hotel|airbnb|expedia|check24.*reise|\breise|airport|airline|lufthansa|ryanair|easyjet|eurowings|condor|emirates|travel|resort|hostel|ferienwohnung/i],
     ['bag', /amazon|amzn|zalando|h&m|hm\.com|\bh_m\b|uniqlo|\bmango\b|\bzara\b|primark|c&a|tchibo|westwing|ikea|douglas|rituals|est[eé]e ?lauder|sephora|thule|\botto\b|about you|limango|galeria|decathlon|tk ?maxx|media ?markt|saturn|kleinanzeigen|vinted/i],
     ['phone', /telekom|vodafone|\bo2\b|telefonica|1&1|congstar|fraenk|aldi talk|\bvpn|netflix|spotify|disney\+?|apple\.com|icloud|youtube|audible/i],

@@ -29,6 +29,8 @@ ok(s[3].type === 'in' && s[3].memo === '월급', 'salary');
 ok(s[4].type === 'out' && s[4].key === 'tram', 'mvg tram');
 ok(r[4].src !== r[5].src && r[4].src.endsWith(':0') && r[5].src.endsWith(':1'), 'same day same amount → different src');
 ok(s[6].type === 'in' && s[6].memo.startsWith('환불'), 'refund');
+ok(N26.suggest({ partner: 'EGYM Wellpass GmbH', ref: 'EGYM Wellpass 01-2026', amount: -54.9, kind: 'debit' }).key === 'lotus', 'wellness');
+ok(N26.suggest({ partner: 'PAYPAL *Spaeter zahlen', ref: '', amount: -91, kind: 'card' }).key !== 'lotus', 'spaeter is not spa');
 ok(N26.suggest(r[1], { rules: { [N26.partnerKey('REWE Markt')]: 'cat:외식' } }).cat === '외식', 'user rule wins');
 // PDF 줄 (가짜)
 const pages = [['Name', 'Adresse', 'Beschreibung Verbuchungsdatum Betrag',
