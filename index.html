@@ -219,7 +219,7 @@ label.f > small { display: block; font-size: 12px; color: var(--mut); font-weigh
 <script src="import.js"></script>
 <script>
 // ───────── 설정 ─────────
-const VERSION = '2026-11-23 · 7';
+const VERSION = '2026-11-23 · 8';
 const API = 'https://budget-sync.weekly-meals-reader.workers.dev';
 const APP_URL = 'https://trykyn.github.io/budget/';
 const LS = { key: 'budget:key', data: 'budget:data', queue: 'budget:queue', quotes: 'budget:quotes', view: 'budget:view' };
@@ -259,6 +259,7 @@ const P = {
   in:      '<path d="M12 4v10M8 10.2l4 4 4-4"/><path d="M4.5 15v3.4a1.6 1.6 0 0 0 1.6 1.6h11.8a1.6 1.6 0 0 0 1.6-1.6V15"/>',
   coin:    '<circle cx="12" cy="12" r="8.2"/><path d="M15 9a3.9 3.9 0 1 0 0 6M7.8 11h5.4M7.8 13.2h5.4"/>',
   xfer:    '<path d="M4 8.5h14L14.5 5M20 15.5H6L9.5 19"/>',
+  search:  '<circle cx="10.8" cy="10.8" r="6.3"/><path d="m15.5 15.5 4.5 4.5"/>',
   lotus:   '<path d="M12 19.6c-3.9 0-7.1-2.2-8.1-5.6 2.7-.4 5.2.4 8.1 2.6 2.9-2.2 5.4-3 8.1-2.6-1 3.4-4.2 5.6-8.1 5.6z"/><path d="M12 16.4c-1.8-1.6-2.8-3.6-2.8-5.8 0-2.3 1.1-4.3 2.8-5.8 1.7 1.5 2.8 3.5 2.8 5.8 0 2.2-1 4.2-2.8 5.8z"/><path d="M9.5 14.6c-2-.8-3.6-2.5-4.2-4.7 1.3-.3 2.7-.1 3.9.4M14.5 14.6c2-.8 3.6-2.5 4.2-4.7-1.3-.3-2.7-.1-3.9.4"/>',
   piggy:   '<path d="M4.5 12.2c0-3.3 3-5.7 6.8-5.7h1.4c2.4 0 4.4 1 5.5 2.6l1.8.2v3.9l-1.6.5c-.5 1-1.3 1.8-2.4 2.4V19h-2.6v-1.8h-3.2V19H7.6v-2.6c-1.9-1-3.1-2.4-3.1-4.2z"/><path d="M10.2 9.2h3.4M4.6 11.4c-1 0-1.6-.6-1.6-1.4"/><circle cx="16.2" cy="11" r=".9" fill="currentColor" stroke="none"/>',
   // 화면용
@@ -300,7 +301,7 @@ let V = { tab: 'kr', mode: 'month', ...lsGet(LS.view, {}) };
 V.cat = null; V.bar = null; V.ym = ymOf(today());
 let sync = { state: 'idle', at: 0 };
 
-function normalize(d) { d = d || {}; return { tx: d.tx || {}, stocks: d.stocks || {}, cats: d.cats || {}, bal: d.bal || {}, ico: d.ico || {}, rules: d.rules || {}, kr: d.kr && Array.isArray(d.kr.accts) ? d.kr : { accts: [], snaps: [] } }; }
+function normalize(d) { d = d || {}; return { tx: d.tx || {}, stocks: d.stocks || {}, cats: d.cats || {}, bal: d.bal || {}, ico: d.ico || {}, rules: d.rules || {}, kr: d.kr && Array.isArray(d.kr.accts) ? d.kr : { accts: [], snaps: [] }, recur: d.recur || {} }; }
 function saveLocal() { lsSet(LS.data, D); }
 function cats(acc) { return (D.cats[acc] && D.cats[acc].length) ? D.cats[acc] : DEFAULT_CATS[acc]; }
 
@@ -311,7 +312,7 @@ function change(kind, id, val) {
     if (val) D[kind][id] = val; else delete D[kind][id];
   } else if (kind === 'cats') {
     Q.cats = { ...(Q.cats || {}), [id]: val }; D.cats = { ...D.cats, [id]: val };
-  } else if (kind === 'bal' || kind === 'ico' || kind === 'rules') {
+  } else if (kind === 'bal' || kind === 'ico' || kind === 'rules' || kind === 'recur') {
     Q[kind] = { ...(Q[kind] || {}), [id]: val }; D[kind] = { ...D[kind] }; if (val) D[kind][id] = val; else delete D[kind][id];
   } else if (kind === 'kr') { // 한국 계좌 목록·잔액 기록: 통째로 바꿈 (id 는 안 씀)
     Q.kr = val; D.kr = val;
@@ -327,13 +328,13 @@ function changeMany(kind, entries) {
 function applyQueue(data, q) {
   for (const k of ['tx', 'stocks']) for (const [id, v] of Object.entries(q[k] || {})) { if (v) data[k][id] = v; else delete data[k][id]; }
   if (q.cats) data.cats = { ...data.cats, ...q.cats };
-  for (const k of ['bal', 'ico', 'rules']) if (q[k]) for (const [a, v] of Object.entries(q[k])) { if (v) data[k][a] = v; else delete data[k][a]; }
+  for (const k of ['bal', 'ico', 'rules', 'recur']) if (q[k]) for (const [a, v] of Object.entries(q[k])) { if (v) data[k][a] = v; else delete data[k][a]; }
   if (q.kr) data.kr = q.kr;
   return data;
 }
 function mergeQueue(a, b) {
   const o = { ...a };
-  for (const k of ['tx', 'stocks', 'cats', 'bal', 'ico', 'rules']) if (b[k]) o[k] = { ...(a[k] || {}), ...b[k] };
+  for (const k of ['tx', 'stocks', 'cats', 'bal', 'ico', 'rules', 'recur']) if (b[k]) o[k] = { ...(a[k] || {}), ...b[k] };
   if (b.kr) o.kr = b.kr;
   return o;
 }
@@ -342,7 +343,14 @@ function scheduleFlush(ms = 400) { clearTimeout(flushT); flushT = setTimeout(flu
 async function flush() {
   if (flushing || !Object.keys(Q).length) { setSync(); return; }
   flushing = true; setSync('busy');
-  const sent = Q; Q = {}; lsSet(LS.queue, Q);
+  // 한 번에 기록 2500건까지만 보냄 (나머지는 다음 번에) — 서버가 한 번에 받는 양을 넘지 않게
+  let sent = Q; Q = {};
+  const txIds = Object.keys(sent.tx || {});
+  if (txIds.length > 2500) {
+    Q.tx = Object.fromEntries(txIds.slice(2500).map(id => [id, sent.tx[id]]));
+    sent = { ...sent, tx: Object.fromEntries(txIds.slice(0, 2500).map(id => [id, sent.tx[id]])) };
+  }
+  lsSet(LS.queue, Q);
   try {
     const r = await fetch(`${API}/d/${KEY}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(sent) });
     if (!r.ok) throw new Error(r.status);
@@ -353,7 +361,7 @@ async function flush() {
     clearTimeout(flushT); flushT = setTimeout(flush, 20000);
   }
   flushing = false;
-  if (Object.keys(Q).length && sync.state === 'ok') scheduleFlush();
+  if (Object.keys(Q).length && sync.state === 'ok') scheduleFlush(50);
 }
 async function pull() {
   if (flushing) return;
@@ -368,29 +376,52 @@ async function pull() {
     lsSet('budget:pulled', true);
     D = applyQueue(data, Q); saveLocal(); sync.at = Date.now(); setSync('ok');
     migrate();
+    runRecur();
     if (!sheetOpen()) render();
     if (Object.keys(Q).length) scheduleFlush(50);
   } catch { setSync('off'); }
 }
 // 한 번만 하는 고치기 (기기마다 한 번, 서버 자료를 받은 뒤)
 // 1) 2026-11-23: 독일 계좌 항목에서 '월세' 빼고 '웰니스' 넣기 (엄마는 월세를 안 냄). '월세'였던 기록은 '기타'로
+// 한 번 고친 결과는 서버의 항목 목록에 남으므로(목록에 '웰니스'가 있음 = 이미 함) 다른 기기에서 다시 하지 않음
 function migrate() {
   if (lsGet('budget:mig-wellness', false)) return;
   lsSet('budget:mig-wellness', true);
-  if (D.cats.de && D.cats.de.length) {
-    const list = D.cats.de.filter(c => c !== '월세');
+  if (D.cats.de && D.cats.de.includes('웰니스')) return; // 다른 기기에서 이미 함
+  {
+    const list = (D.cats.de && D.cats.de.length ? D.cats.de : DEFAULT_CATS.de).filter(c => c !== '월세');
     if (!list.includes('웰니스')) { const at = list.indexOf('쇼핑·여행') >= 0 ? list.indexOf('쇼핑·여행') : list.indexOf('기타'); if (at >= 0) list.splice(at, 0, '웰니스'); else list.push('웰니스'); }
-    if (JSON.stringify(list) !== JSON.stringify(D.cats.de)) change('cats', 'de', list);
+    change('cats', 'de', list); // 기본 목록도 서버에 적어 둠 → 다음 기기는 위에서 멈춤
   }
   const moved = Object.entries(D.tx).filter(([, t]) => t.acc === 'de' && t.type === 'out' && t.cat === '월세').map(([id, t]) => [id, { ...t, cat: '기타', u: Date.now() }]);
   // '기타'에 들어가 있던 웰니스 가게(EGYM, 마사지 …)는 웰니스로. 직접 항목을 골라 준 가게는 그대로
   if (cats('de').includes('웰니스') && window.N26) for (const [id, t] of Object.entries(D.tx)) {
-    if (t.acc !== 'de' || t.type !== 'out' || t.cat !== '기타' || !t.memo || D.rules[N26.partnerKey(t.memo)]) continue;
+    const pk = t.memo && N26.partnerKey(t.memo);
+    if (t.acc !== 'de' || t.type !== 'out' || t.cat !== '기타' || !t.memo || D.rules[pk] || D.rules[`${pk}|-`]) continue;
     if (N26.suggest({ partner: t.memo, ref: '', amount: -1, kind: 'card' }).key === 'lotus') moved.push([id, { ...t, cat: '웰니스', u: Date.now() }]);
   }
   if (moved.length) changeMany('tx', moved);
   const rr = Object.entries(D.rules || {}).filter(([, v]) => v === 'cat:월세').map(([k]) => [k, null]);
   if (rr.length) changeMany('rules', rr);
+}
+// 매달 반복: 반복 기록마다 지난번(last) 다음 달부터 이번 달까지, 정한 날짜가 지났으면 기록을 만듦.
+// 기록 id 가 '반복 id + 연월'로 정해져 있어서 두 기기에서 같이 만들어도 하나만 남음. 만든 기록을 지워도 다시 안 만듦(last)
+const nextYm = ym => { let [y, m] = ym.split('-').map(Number); m++; if (m > 12) { m = 1; y++; } return `${y}-${String(m).padStart(2, '0')}`; };
+const prevYm = ym => { let [y, m] = ym.split('-').map(Number); m--; if (m < 1) { m = 12; y--; } return `${y}-${String(m).padStart(2, '0')}`; };
+function runRecur() {
+  const now = today(), cur = ymOf(now), add = [];
+  for (const [rid, r] of Object.entries(D.recur || {})) {
+    let ym = r.last ? nextYm(r.last) : r.from, last = r.last;
+    for (let guard = 0; guard < 36 && ym <= cur && (!r.until || ym <= r.until); guard++, ym = nextYm(ym)) {
+      const date = `${ym}-${String(r.day).padStart(2, '0')}`;
+      if (date > now) break;
+      const id = `r${rid}${ym.replace('-', '')}`.slice(0, 24);
+      if (!D.tx[id]) add.push([id, { acc: r.acc, type: r.type, date, amount: r.amount, ...(r.cat && r.type === 'out' ? { cat: r.cat } : {}), ...(r.memo ? { memo: r.memo } : {}), ...(r.pass ? { pass: true } : {}), rec: `${rid}:${ym}`, u: Date.now() }]);
+      last = ym;
+    }
+    if (last !== r.last) change('recur', rid, { ...r, last });
+  }
+  if (add.length) changeMany('tx', add);
 }
 function setSync(s) { if (s) sync.state = s; document.getElementById('sync-dot').hidden = !(Object.keys(Q).length && sync.state === 'off'); }
 
@@ -441,45 +472,65 @@ const allTx = () => Object.entries(D.tx).map(([id, t]) => ({ id, ...t }));
 const txOf = acc => allTx().filter(t => t.type === 'xfer' || t.acc === acc);
 // 기록 하나가 그 계좌에 주는 변화: { inc, out, xfer } (xfer = 독일에서 나간 송금, 한국은 inc 에 포함)
 // sav = 저금 (내 Space 등으로 옮긴 돈: 지출이 아니고 모은 돈. 꺼내면 음수)
+// pass = 그냥 지나가는 돈 (Kindergeld 받아서 바로 넘겨줌 등): 잔액엔 들어가고 수입·지출·비율엔 안 셈 (+ 들어옴 / − 나감)
+// 환불(refund)은 지출을 줄임
 function effect(t, acc) {
-  const z = { inc: 0, out: 0, xfer: 0, sav: 0 };
+  const z = { inc: 0, out: 0, xfer: 0, sav: 0, pass: 0 };
   if (t.type === 'xfer') return acc === 'kr' ? { ...z, inc: t.krw } : { ...z, xfer: t.eur + (t.fee || 0) };
   if (t.acc !== acc) return z;
   if (t.type === 'save') return { ...z, sav: t.amount };
-  return t.type === 'in' ? { ...z, inc: t.amount } : { ...z, out: t.amount };
+  if (t.pass) return { ...z, pass: t.type === 'in' ? t.amount : -t.amount };
+  if (t.type === 'in') return { ...z, inc: t.amount };
+  return { ...z, out: t.refund ? -t.amount : t.amount };
 }
+const flow = e => e.inc - e.out - e.xfer - e.sav + e.pass; // 통장에서 늘어난 돈
 function sums(list, acc) {
-  const s = { inc: 0, out: 0, xfer: 0, sav: 0, xEur: 0, xKrw: 0 };
+  const s = { inc: 0, out: 0, xfer: 0, sav: 0, pass: 0, passIn: 0, passOut: 0, xEur: 0, xKrw: 0 };
   for (const t of list) {
-    const e = effect(t, acc); s.inc += e.inc; s.out += e.out; s.xfer += e.xfer; s.sav += e.sav;
+    const e = effect(t, acc); s.inc += e.inc; s.out += e.out; s.xfer += e.xfer; s.sav += e.sav; s.pass += e.pass;
+    if (e.pass > 0) s.passIn += e.pass; else s.passOut -= e.pass;
     if (t.type === 'xfer') { s.xEur += t.eur; s.xKrw += t.krw; }
   }
-  s.net = s.inc - s.out - s.xfer - s.sav; return s;
+  s.net = s.inc - s.out - s.xfer - s.sav + s.pass; return s;
+}
+// 저금 한 줄(한 달 묶음)이 기준일 뒤에 준 변화: 묶인 거래(m: "날짜:센트:순번", 센트는 메인 계좌 기준)마다 날짜를 봄
+function saveAfter(t, date) {
+  if (!t.m || !t.m.length) return t.date > date ? t.amount : 0;
+  let c = 0;
+  for (const x of t.m) { const [d, cents] = x.split(':'); if (d > date) c -= +cents; }
+  return Math.round(c) / 100;
+}
+// 기록 하나가 기준일(date) 뒤에 계좌에 준 변화
+function flowAfter(t, acc, date) {
+  if (t.type === 'save' && t.acc === acc) return -saveAfter(t, date);
+  return t.date > date ? flow(effect(t, acc)) : 0;
 }
 // 한국 계좌들: 가장 최근에 한꺼번에 적은 잔액 { date, total, a }
 const snapTotal = (s, ids) => Object.entries(s.a).reduce((p, [id, n]) => p + (!ids || ids.has(id) ? n : 0), 0);
 function krSnaps() { return (D.kr.snaps || []).filter(s => Object.keys(s.a).length).slice().sort((a, b) => a.date.localeCompare(b.date)); }
 function krSnap() { const s = krSnaps().at(-1); return s ? { date: s.date, total: snapTotal(s), a: s.a } : null; }
-// 기록 안 한 돈: 지난번 잔액 + 그 사이 기록 vs 이번 잔액 (두 번 다 적은 계좌만 비교 — 새로 넣은 계좌는 수입이 아님)
+// 기록 안 한 돈: 지난번 잔액 합계 + 그 사이 기록 vs 이번 잔액 합계.
+// 계좌 목록이 바뀐 때(새 계좌·뺀 계좌)는 옮긴 돈인지 알 수 없어서 비교하지 않음
 function krGap() {
   const s = krSnaps(); if (s.length < 2) return null;
-  const prev = s.at(-2), last = s.at(-1), ids = new Set(Object.keys(prev.a).filter(id => id in last.a));
-  if (!ids.size) return null;
-  let expect = snapTotal(prev, ids);
-  for (const t of txOf('kr')) if (t.date > prev.date && t.date <= last.date) { const e = effect(t, 'kr'); expect += e.inc - e.out - e.xfer - e.sav; }
-  return { from: prev.date, to: last.date, gap: Math.round(snapTotal(last, ids) - expect) };
+  const prev = s.at(-2), last = s.at(-1);
+  const a = Object.keys(prev.a).sort().join(','), b = Object.keys(last.a).sort().join(',');
+  if (a !== b) return { from: prev.date, to: last.date, changed: true };
+  let expect = snapTotal(prev);
+  for (const t of txOf('kr')) if (t.date <= last.date) expect += flowAfter(t, 'kr', prev.date);
+  return { from: prev.date, to: last.date, gap: Math.round(snapTotal(last) - expect) };
 }
 function balanceNow(acc) {
   const ks = acc === 'kr' && krSnap();
   const b = ks ? { amount: ks.total, date: ks.date } : D.bal[acc]; if (!b) return null;
   let v = b.amount;
-  for (const t of txOf(acc)) if (t.date > b.date) { const e = effect(t, acc); v += e.inc - e.out - e.xfer - e.sav; }
+  for (const t of txOf(acc)) v += flowAfter(t, acc, b.date);
   return v;
 }
 // 모은 돈: 설정에서 맞춘 저금 잔액(bal.sv) + 그 뒤 저금 기록. 안 맞췄으면 가계부에 넣은 저금만 더함
 function savingsNow() {
   const b = D.bal.sv; let v = b ? b.amount : 0, any = !!b;
-  for (const t of allTx()) if (t.type === 'save' && (!b || t.date > b.date)) { v += t.amount; any = true; }
+  for (const t of allTx()) if (t.type === 'save') { v += b ? saveAfter(t, b.date) : t.amount; any = true; }
   return any ? { total: v, based: !!b } : null;
 }
 function catColor(acc, c) {
@@ -502,6 +553,7 @@ function render() {
   fab.setAttribute('aria-label', V.tab === 'st' ? '종목 추가' : '기록 넣기');
   lsSet(LS.view, { tab: V.tab, mode: V.mode });
   $view.innerHTML = V.tab === 'st' ? renderStocks() : renderAccount(V.tab);
+  bindHistorySearch();
 }
 
 function renderAccount(acc) {
@@ -516,12 +568,15 @@ function renderAccount(acc) {
     ${acc === 'kr'
       // 한국 계좌는 소득이 없어서 '남은 돈' 대신 총잔액이 맨 위 (계좌별 잔액 + 그 뒤 기록)
       ? `<div class="hero">${bal != null ? fmtKRW(bal) : '₩ –'}</div>
-    <div class="hero-sub"><span>한국 계좌 총잔액${(() => { const ks = krSnap(); if (!ks || ks.date === today()) return D.kr.accts.length ? ` · 계좌 ${D.kr.accts.length}개` : ''; const [, m, d] = ks.date.split('-').map(Number); return ` · ${m}월 ${d}일 잔액 + 그 뒤 기록`; })()}</span><button data-act="kr-accts">${bal != null ? '잔액 업데이트 ›' : '계좌 잔액 적기 ›'}</button></div>`
+    <div class="hero-sub"><span>한국 계좌 총잔액${(() => { const ks = krSnap(); if (!ks || ks.date === today()) { const n = D.kr.accts.filter(a => !a.off).length; return n ? ` · 계좌 ${n}개` : ''; } const [, m, d] = ks.date.split('-').map(Number); return ` · ${m}월 ${d}일 잔액 + 그 뒤 기록`; })()}</span><button data-act="kr-accts">${bal != null ? '잔액 업데이트 ›' : '계좌 잔액 적기 ›'}</button></div>`
       : `<div class="hero">${signed(f, s.net)}</div>
     <div class="hero-sub"><span>${V.mode === 'year' ? '올해' : '이번 달'} 남은 돈</span>${bal != null ? `<button data-act="bal" data-v="${acc}">잔액 ${f(bal)} ›</button>` : `<button data-act="bal" data-v="${acc}">잔액 맞추기 ›</button>`}</div>`}`;
   if (acc === 'kr') {
     h += `<div class="three"><div>들어온 돈<b>${f(s.inc)}</b></div><div>나간 돈<b>${f(s.out)}</b></div><div>독일에서<b>${fmtEUR(s.xEur)}</b></div></div>`;
     if (s.xKrw) h += `<div class="note-line">${ic('xfer', 16)}<span>${fmtEUR(s.xEur)} 보내서 <b>${fmtKRW(s.xKrw)}</b> 받음 · 평균 1€ = ${fmtKRW(s.xKrw / s.xEur)}</span></div>`;
+    // 그날 환율로 추정한 송금 → 실제 받은 원화로 한꺼번에 고치기
+    const nEst = allTx().filter(t => t.type === 'xfer' && t.est).length;
+    if (nEst) h += `<button class="note-line" data-act="fix-krw" style="width:100%;text-align:left">${ic('xfer', 16)}<span style="flex:1">원화를 그날 환율로 추정한 송금 <b>${nEst}건</b> · 실제 받은 금액으로 고치기</span>${ic('right', 14, 2)}</button>`;
   } else {
     h += `<div class="three"><div>수입<b>${f(s.inc)}</b></div><div>지출<b>${f(s.out)}</b></div><div>한국으로<b>${f(s.xfer)}</b></div></div>`;
     if (s.xKrw) h += `<div class="note-line">${ic('xfer', 16)}<span>한국 계좌에 <b>${fmtKRW(s.xKrw)}</b> 들어감 · 평균 1€ = ${fmtKRW(s.xKrw / s.xEur)}</span></div>`;
@@ -531,6 +586,8 @@ function renderAccount(acc) {
       ? `${V.mode === 'year' ? '올해' : '이번 달'} 저금 <b>${signed(fmtEUR, s.sav)}</b>${sv ? ` · 모은 돈 <b>${fmtEUR(sv.total)}</b>${sv.based ? '' : ' <span class="mut">(넣은 기록만 · 눌러서 맞추기)</span>'}` : ''}`
       : '저금(Space) 잔액 맞추기'}</span>${ic('right', 14, 2)}</button>`;
   }
+  // 그냥 지나간 돈 (Kindergeld → 남편 등): 수입·지출엔 안 넣고 여기만 보여줌
+  if (s.passIn || s.passOut) h += `<div class="note-line">${ic('xfer', 16)}<span>그냥 지나간 돈 · 들어옴 ${f(s.passIn)} · 나감 ${f(s.passOut)}${s.passIn && s.passOut ? ` · <b>남음 ${signed(f, s.pass)}</b>` : ''}</span></div>`;
   if (acc === 'kr') h += renderKrAccounts();
   if (acc === 'kr' && Object.keys(D.stocks).length) {
     const P = portfolio(), g = P.gainPct != null;
@@ -546,15 +603,17 @@ function renderAccount(acc) {
 // 내 한국 계좌들: 계좌별 잔액(토스 등에서 보고 한꺼번에 적음) + 합계 + 기록 안 한 돈
 function renderKrAccounts() {
   const s = krSnap();
-  if (!D.kr.accts.length || !s) return `<button class="note-line" data-act="kr-accts" style="width:100%;text-align:left">${ic('card', 16)}<span style="flex:1">한국 계좌들 잔액 적기 <span class="mut">· 토스에서 보고 계좌별로 적으면 총잔액을 계산해요</span></span>${ic('right', 14, 2)}</button>`;
+  const active = D.kr.accts.filter(a => !a.off);
+  if (!active.length || !s) return `<button class="note-line" data-act="kr-accts" style="width:100%;text-align:left">${ic('card', 16)}<span style="flex:1">한국 계좌들 잔액 적기 <span class="mut">· 토스에서 보고 계좌별로 적으면 총잔액을 계산해요</span></span>${ic('right', 14, 2)}</button>`;
   const [, m, d] = s.date.split('-').map(Number);
-  let h = `<section style="margin-top:18px"><h5><span>내 계좌 ${D.kr.accts.length} · ${m}월 ${d}일 기준</span><button class="pill" data-act="kr-accts">잔액 업데이트</button></h5>`;
-  h += D.kr.accts.map(a => `<div class="acct"><span>${esc(a.name)}</span><b class="num">${a.id in s.a ? fmtKRW(s.a[a.id]) : '–'}</b></div>`).join('');
+  let h = `<section style="margin-top:18px"><h5><span>내 계좌 ${active.length} · ${m}월 ${d}일 기준</span><button class="pill" data-act="kr-accts">잔액 업데이트</button></h5>`;
+  h += active.map(a => `<div class="acct"><span>${esc(a.name)}</span><b class="num">${a.id in s.a ? fmtKRW(s.a[a.id]) : '–'}</b></div>`).join('');
   h += `<div class="acct total"><span>합계</span><b class="num">${fmtKRW(s.total)}</b></div>`;
   const g = krGap();
   if (g) {
     const [, fm, fd] = g.from.split('-').map(Number);
-    if (Math.abs(g.gap) < 1000) h += `<div class="note-line">${fm}월 ${fd}일 이후 기록이 잔액과 맞아요.</div>`;
+    if (g.changed) h += `<div class="note-line mut">계좌 목록이 바뀌어서 ${fm}월 ${fd}일과는 비교하지 않았어요. 다음 업데이트부터 다시 비교해요.</div>`;
+    else if (Math.abs(g.gap) < 1000) h += `<div class="note-line">${fm}월 ${fd}일 이후 기록이 잔액과 맞아요.</div>`;
     else h += `<div class="note-line" style="justify-content:space-between"><span>${fm}월 ${fd}일 이후 <b>기록 안 한 ${g.gap < 0 ? '지출' : '입금'} ${fmtKRW(Math.abs(g.gap))}</b></span><button class="pill" style="font-size:12.5px;padding:4px 10px;border:1.3px solid var(--ink);border-radius:999px;font-weight:700;white-space:nowrap" data-act="kr-gap">기록으로 넣기</button></div>`;
   }
   return h + `</section>`;
@@ -563,10 +622,12 @@ function renderKrAccounts() {
 function renderSpending(acc, list, total) {
   const f = n => fmtAcc(acc, n);
   let h = `<section><h5><span>지출 항목</span>${V.cat ? `<button class="filter" data-act="cat" data-v="">${esc(V.cat)} ${ic('x', 14, 2.2)}</button>` : `<span class="r num">${f(total)}</span>`}</h5>`;
-  if (!total) return h + `<p class="empty">${V.mode === 'year' ? '이 해' : '이번 달'}에 지출 기록이 없어요</p></section>`;
+  if (total <= 0.004) return h + `<p class="empty">${V.mode === 'year' ? '이 해' : '이번 달'}에 지출 기록이 없어요</p></section>`;
+  // 항목별 합계 (환불은 그 항목에서 뺌, 그냥 지나가는 돈은 안 셈)
   const by = {};
-  for (const t of list) if (t.type === 'out' && t.acc === acc) { const c = catOf(acc, t); by[c] = (by[c] || 0) + t.amount; }
-  const rows = Object.keys(by).map(c => ({ c, v: by[c], p: by[c] / total * 100, col: catColor(acc, c) })).sort((a, b) => b.v - a.v);
+  for (const t of list) if (t.type === 'out' && t.acc === acc && !t.pass) { const c = catOf(acc, t); by[c] = (by[c] || 0) + (t.refund ? -t.amount : t.amount); }
+  const pos = Object.keys(by).filter(c => by[c] > 0.004), sum = pos.reduce((a, c) => a + by[c], 0) || 1;
+  const rows = pos.map(c => ({ c, v: by[c], p: by[c] / sum * 100, col: catColor(acc, c) })).sort((a, b) => b.v - a.v);
   h += `<div class="stack">${rows.map(r => `<button data-act="cat" data-v="${esc(r.c)}" class="${V.cat && V.cat !== r.c ? 'dimmed' : ''}" style="flex:${r.v};background:${r.col}" aria-label="${esc(r.c)} ${r.p.toFixed(1)}%"></button>`).join('')}</div>`;
   h += rows.map(r => `<button class="cl${V.cat && V.cat !== r.c ? ' dimmed' : ''}" data-act="cat" data-v="${esc(r.c)}">${ic(catIcon(r.c), 20)}
     <span class="n"><span>${esc(r.c)}</span><i style="background:${r.col}"></i></span><span class="a num">${f(r.v)}</span><span class="p num">${r.p < 1 ? r.p.toFixed(1) : Math.round(r.p)}%</span></button>`).join('');
@@ -577,7 +638,7 @@ function renderYearBars(acc) {
   const y = V.ym.slice(0, 4);
   const vals = Array.from({ length: 12 }, (_, i) => {
     const key = `${y}-${String(i + 1).padStart(2, '0')}`;
-    return txOf(acc).filter(t => t.date.startsWith(key) && t.type === 'out' && t.acc === acc && (!V.cat || catOf(acc, t) === V.cat)).reduce((a, t) => a + t.amount, 0);
+    return Math.max(0, txOf(acc).filter(t => t.date.startsWith(key) && t.type === 'out' && t.acc === acc && !t.pass && (!V.cat || catOf(acc, t) === V.cat)).reduce((a, t) => a + (t.refund ? -t.amount : t.amount), 0));
   });
   const max = Math.max(...vals);
   if (!max) return '';
@@ -599,23 +660,66 @@ function txRow(acc, t) {
     ring = `<span class="ring">${ic('piggy', 18)}</span>`;
     t1 = t.memo || '저금'; t2 = (t.amount >= 0 ? '저금' : '저금에서 꺼냄') + (t.n ? ` · ${t.n}건 묶음` : '');
     amt = (t.amount >= 0 ? '−' : '+') + fmtEUR(Math.abs(t.amount));
+  } else if (t.pass) {
+    ring = `<span class="ring" style="border-style:dashed">${ic('xfer', 18)}</span>`;
+    t1 = t.memo || '그냥 지나가는 돈'; t2 = '그냥 지나가는 돈 (수입·지출에 안 셈)'; amt = (t.type === 'in' ? '+' : '−') + fmtAcc(acc, t.amount);
   } else if (t.type === 'in') {
     ring = `<span class="ring">${ic(/월급|급여|이자|gehalt/i.test(t.memo || '') ? 'coin' : 'in', 18)}</span>`;
     t1 = t.memo || ACC[acc].inLabel; t2 = ACC[acc].inLabel; amt = '+' + fmtAcc(acc, t.amount);
   } else {
     const c = catOf(acc, t);
     ring = `<span class="ring">${ic(catIcon(c), 18)}<i style="background:${catColor(acc, c)}"></i></span>`;
-    t1 = t.memo || c; t2 = c; amt = '−' + fmtAcc(acc, t.amount);
+    t1 = t.memo || c; t2 = t.refund ? `${c} · 환불` : c; amt = (t.refund ? '+' : '−') + fmtAcc(acc, t.amount);
   }
+  if (t.rec) t2 += ' · 매달 반복';
   return `<button class="tx" data-act="edit" data-id="${t.id}">${ring}<span class="m"><div class="t1">${esc(t1)}</div><div class="t2">${dayLabel(t.date)} · ${esc(t2)}</div></span><span class="amt num">${amt}</span></button>`;
 }
+// 내역 + 검색 (검색은 이 계좌의 모든 기간에서 메모·항목·금액으로 찾음)
+function historyRows(acc, list) {
+  const q = (V.q || '').trim().toLowerCase();
+  let rows;
+  if (q) {
+    const qn = q.replace(/[^\d]/g, '');
+    rows = txOf(acc).filter(t => {
+      const hay = `${t.memo || ''} ${t.cat || ''} ${t.type === 'xfer' ? ACC[acc].xferLabel : ''} ${t.pass ? '그냥 지나가는 돈' : ''} ${t.refund ? '환불' : ''}`.toLowerCase();
+      const amts = [t.amount, t.eur, t.krw].filter(x => x != null).map(x => String(Math.abs(x)).replace('.', ''));
+      return hay.includes(q) || (qn.length >= 2 && amts.some(a => a.includes(qn)));
+    });
+  } else {
+    rows = list.slice();
+    if (V.cat) rows = rows.filter(t => t.type === 'out' && t.acc === acc && catOf(acc, t) === V.cat);
+  }
+  return rows.sort((a, b) => b.date.localeCompare(a.date) || (b.u || 0) - (a.u || 0));
+}
+function historyListHTML(acc, rows) {
+  if (!rows.length) return V.q ? `<p class="empty">'${esc(V.q)}'(으)로 찾은 기록이 없어요</p>`
+    : `<p class="empty">기록이 없어요. 오른쪽 아래 <b>+</b> 로 넣${acc === 'de' ? '거나, N26 거래 내역(PDF·CSV)을 가져와' : '어'} 보세요.</p>`;
+  let head = '';
+  if (V.q) {
+    const net = rows.reduce((a, t) => a + flow(effect(t, acc)), 0);
+    head = `<p class="small-note" style="margin:0 0 4px">모든 기간에서 ${rows.length}건 · 합계 ${signed(n => fmtAcc(acc, n), net)}</p>`;
+  }
+  return head + rows.map(t => txRow(acc, t)).join('');
+}
+let lastHist = null; // 검색할 때 내역만 다시 그리려고 (입력 칸 포커스 유지)
+function bindHistorySearch() {
+  const inp = document.getElementById('hist-q');
+  if (!inp || !lastHist) return;
+  inp.oninput = () => {
+    V.q = inp.value;
+    const rows = historyRows(lastHist.acc, lastHist.list);
+    document.getElementById('hist-list').innerHTML = historyListHTML(lastHist.acc, rows);
+    document.getElementById('hist-n').textContent = `내역 ${rows.length}`;
+  };
+}
 function renderHistory(acc, list) {
-  let rows = list.slice();
-  if (V.cat) rows = rows.filter(t => t.type === 'out' && t.acc === acc && catOf(acc, t) === V.cat);
-  rows.sort((a, b) => b.date.localeCompare(a.date) || (b.u || 0) - (a.u || 0));
-  let h = `<section><h5><span>내역 ${rows.length}</span>${acc === 'de' ? `<button class="pill" data-act="import">N26 가져오기</button>` : ''}</h5>`;
-  if (!rows.length) return h + `<p class="empty">기록이 없어요. 오른쪽 아래 <b>+</b> 로 넣${acc === 'de' ? '거나, N26 거래 내역(PDF·CSV)을 가져와' : '어'} 보세요.</p></section>`;
-  return h + rows.map(t => txRow(acc, t)).join('') + `</section>`;
+  lastHist = { acc, list };
+  const rows = historyRows(acc, list);
+  let h = `<section><h5><span id="hist-n">내역 ${rows.length}</span><span style="display:flex;gap:8px;align-items:center">
+    <button class="pill" data-act="search" aria-label="검색">${ic('search', 15, 2.2)}</button>${acc === 'de' ? `<button class="pill" data-act="import">N26 가져오기</button>` : ''}</span></h5>`;
+  if (V.searching || V.q) h += `<div class="cat-edit" style="margin-bottom:6px"><input class="inp" id="hist-q" value="${esc(V.q || '')}" placeholder="가게·메모·항목·금액으로 찾기" autocomplete="off" enterkeyhint="search">
+    ${V.q ? `<button class="x-btn" data-act="search-clear" aria-label="지우기">${ic('x', 16, 2)}</button>` : ''}</div>`;
+  return h + `<div id="hist-list">${historyListHTML(acc, rows)}</div></section>`;
 }
 
 // ───────── 주식 ─────────
@@ -731,6 +835,7 @@ function openTx(acc, id) {
     dir: old?.type === 'save' && old.amount < 0 ? -1 : 1, // 저금: 1 = 넣음, -1 = 꺼냄
     eur: old?.eur != null ? String(old.eur).replace('.', ',') : '', krw: old?.krw != null ? String(old.krw) : '', fee: old?.fee != null ? String(old.fee).replace('.', ',') : '',
     krwTouched: !!old,
+    pass: !!old?.pass, refund: !!old?.refund, recur: false, // 그냥 지나가는 돈 · 환불 · 매달 반복(새 기록만)
   };
   const rate = () => QUOTES['EURKRW=X']?.p;
   if (!rate() || Date.now() - quotesAt > 600000) refreshQuotes(true).then(() => { if (sheetOpen() && st.type === 'xfer') draw(); });
@@ -743,7 +848,14 @@ function openTx(acc, id) {
     if (!isX) {
       h += `<div class="big-in"><span>${A.cur}</span><input id="f-amt" inputmode="decimal" autocomplete="off" value="${esc(st.amount)}" placeholder="0" aria-label="금액"></div><div class="hint" id="h-amt"></div>`;
       if (st.type === 'save') h += `<div class="chips" style="margin:0 0 16px"><button class="chip${st.dir > 0 ? ' on' : ''}" data-dir="1">저금에 넣었어요</button><button class="chip${st.dir < 0 ? ' on' : ''}" data-dir="-1">저금에서 꺼냈어요</button></div>`;
-      if (st.type === 'out') {
+      if (st.type === 'out' || st.type === 'in') {
+        const chip = (k, label) => `<button class="chip${st[k] ? ' on' : ''}" data-opt="${k}">${label}</button>`;
+        h += `<div class="chips" style="margin:0 0 14px">${st.type === 'out' ? chip('refund', '환불 받음') : ''}${chip('pass', '그냥 지나가는 돈')}${!old ? chip('recur', '매달 반복') : ''}</div>`;
+        if (st.pass) h += `<p class="small-note" style="margin:-8px 0 14px">받아서 바로 넘겨주는 돈(예: Kindergeld → 남편)이에요. 통장 잔액엔 들어가지만 수입·지출·비율엔 안 들어가요.</p>`;
+        if (st.recur) h += `<p class="small-note" style="margin:-8px 0 14px">매달 이 날짜(${Math.min(28, +st.date.slice(8))}일)에 같은 기록을 알아서 넣어요. 멈추기·지우기는 설정 → 매달 반복에서 해요.</p>`;
+        if (old?.rec) h += `<p class="small-note" style="margin:-8px 0 14px">매달 반복으로 넣은 기록이에요. 이 달 것만 고쳐져요 (반복 자체는 설정에서).</p>`;
+      }
+      if (st.type === 'out' && !st.pass) {
         const list = [...cats(acc), ...(st.cat && !cats(acc).includes(st.cat) ? [st.cat] : [])];
         h += `<div class="cgrid">${list.map(c => `<button data-c="${esc(c)}" class="${st.cat === c ? 'on' : ''}"><span class="ring">${ic(catIcon(c), 22, 1.6)}</span><span class="lbl">${esc(c)}</span></button>`).join('')}</div>`;
       }
@@ -774,6 +886,12 @@ function openTx(acc, id) {
     $sheet.querySelectorAll('[data-c]').forEach(b => b.onclick = () => { st.cat = st.cat === b.dataset.c ? null : b.dataset.c; $sheet.querySelectorAll('[data-c]').forEach(x => x.classList.toggle('on', x.dataset.c === st.cat)); });
     $sheet.querySelectorAll('[data-m]').forEach(b => b.onclick = () => { st.memo = b.dataset.m; document.getElementById('f-memo').value = st.memo; });
     $sheet.querySelectorAll('[data-dir]').forEach(b => b.onclick = () => { st.dir = +b.dataset.dir; $sheet.querySelectorAll('[data-dir]').forEach(x => x.classList.toggle('on', +x.dataset.dir === st.dir)); });
+    $sheet.querySelectorAll('[data-opt]').forEach(b => b.onclick = () => {
+      const k = b.dataset.opt; st[k] = !st[k];
+      if (k === 'pass' && st.pass) st.refund = false;
+      if (k === 'refund' && st.refund) st.pass = false;
+      const top = $sheet.scrollTop; draw(); $sheet.scrollTop = top;
+    });
     const on = (id, fn) => { const el = document.getElementById(id); if (el) el.oninput = () => { fn(el.value); hint(); }; };
     on('f-amt', v => st.amount = v);
     on('f-eur', v => {
@@ -799,12 +917,25 @@ function openTx(acc, id) {
         const amount = parseAmt(st.amount, acc === 'kr');
         if (!amount) return toast('금액을 넣어 주세요');
         rec = { acc, type: st.type, date: st.date, amount: acc === 'kr' ? Math.round(amount) : Math.round(amount * 100) / 100, u: Date.now() };
-        if (st.type === 'save') { rec.amount *= st.dir; if (old?.n) rec.n = old.n; }
-        if (st.type === 'out') rec.cat = st.cat || '기타';
+        if (st.type === 'save') {
+          rec.amount *= st.dir; if (old?.n) rec.n = old.n;
+          if (old?.m && old.amount === rec.amount && old.date === rec.date) rec.m = old.m; // 금액·날짜를 그대로 두면 묶음 정보 유지
+        }
+        if (st.type === 'out') rec.cat = st.pass ? (st.cat || '기타') : (st.cat || '기타');
+        if ((st.type === 'out' || st.type === 'in') && st.pass) rec.pass = true;
+        if (st.type === 'out' && st.refund && !st.pass) rec.refund = true;
         if (st.memo.trim()) rec.memo = st.memo.trim();
         if (old?.src) rec.src = old.src;
+        if (old?.rec) rec.rec = old.rec;
       }
-      change('tx', id || newId(), rec);
+      let txId = id || newId();
+      // 매달 반복: 반복 기록을 만들고, 이 기록은 그 첫 달 것으로
+      if (!old && st.recur && (st.type === 'out' || st.type === 'in')) {
+        const rid = newId(), ym = ymOf(st.date);
+        change('recur', rid, { acc, type: rec.type, amount: rec.amount, ...(rec.cat ? { cat: rec.cat } : {}), ...(rec.memo ? { memo: rec.memo } : {}), ...(rec.pass ? { pass: true } : {}), day: Math.min(28, +st.date.slice(8)), from: ym, last: ym });
+        txId = `r${rid}${ym.replace('-', '')}`.slice(0, 24); rec.rec = `${rid}:${ym}`;
+      }
+      change('tx', txId, rec);
       if (ymOf(st.date) !== V.ym && V.mode === 'month') V.ym = ymOf(st.date);
       closeSheet(); toast(old ? '고쳤어요' : '넣었어요');
     };
@@ -862,7 +993,7 @@ function pickStock(x) {
     const qty = parseQty(document.getElementById('p-qty').value);
     if (qty == null || qty <= 0) return toast('수량을 넣어 주세요');
     const raw = document.getElementById('p-avg').value;
-    const avg = cur === 'KRW' ? parseAmt(raw, true) : parseQty(raw);
+    const avg = parseAmt(raw); // 평단은 소수점이 있을 수 있음 (원화도)
     change('stocks', newId(), { acc: 'kr', sym: x.sym, name: x.name, cur: cur || undefined, qty, ...(avg ? { avg } : {}), u: Date.now() });
     closeSheet(); toast('추가했어요'); refreshQuotes(true);
   };
@@ -897,7 +1028,7 @@ function openStock(id) {
       const qty = parseQty(document.getElementById('e-qty').value);
       if (qty == null || qty < 0) return toast('수량을 확인해 주세요');
       const raw = document.getElementById('e-avg').value;
-      const avg = cur === 'KRW' ? parseAmt(raw, true) : parseQty(raw);
+      const avg = parseAmt(raw); // 평단은 소수점이 있을 수 있음 (원화도)
       const rec = { ...x, qty, u: Date.now() }; if (avg) rec.avg = avg; else delete rec.avg;
       change('stocks', id, rec); closeSheet(); toast('저장했어요');
     };
@@ -987,7 +1118,7 @@ async function eurKrwRates(fromDate) {
   try {
     const r = await fetch(`${API}/c?s=${encodeURIComponent('EURKRW=X')}&r=${range}`);
     const j = await r.json();
-    return j.ts.map((t, i) => [new Date(t * 1000).toISOString().slice(0, 10), j.closes[i]]);
+    return j.ts.map((t, i) => [new Date((t + 43200) * 1000).toISOString().slice(0, 10), j.closes[i]]);
   } catch { return []; }
 }
 function rateOn(list, date) {
@@ -1013,29 +1144,32 @@ function openImport() {
     }
     const inRange = st.rows.filter(x => !x.dup && !x.hidden && x.r.date >= st.from);
     const take = inRange.filter(x => x.act !== 'skip');
+    const isCheck = x => x.unknown && x.act === `cat:${catForIcon(null)}`;
     const counts = {
-      all: take.length, check: take.filter(x => x.unknown && x.act === `cat:${catForIcon(null)}`).length,
-      xfer: take.filter(x => x.act === 'xfer').length, in: take.filter(x => x.act === 'in').length, save: take.filter(x => x.act === 'save').length, skip: inRange.length - take.length,
+      all: take.length, check: take.filter(isCheck).length, xfer: take.filter(x => x.act === 'xfer').length, in: take.filter(x => x.act === 'in').length,
+      pass: take.filter(x => x.act === 'pass').length, save: take.filter(x => x.act === 'save').length, skip: inRange.length - take.length,
     };
     const shown = (st.filter === 'skip' ? inRange.filter(x => x.act === 'skip')
-      : st.filter === 'check' ? take.filter(x => x.unknown && x.act === `cat:${catForIcon(null)}`)
-      : ['xfer', 'in', 'save'].includes(st.filter) ? take.filter(x => x.act === st.filter) : take).slice().sort((a, b) => a.r.date.localeCompare(b.r.date));
-    const sumOut = take.filter(x => x.r.amount < 0 && x.act !== 'save' && x.act !== 'xfer').reduce((a, x) => a - x.r.amount, 0);
+      : st.filter === 'check' ? take.filter(isCheck)
+      : ['xfer', 'in', 'save', 'pass'].includes(st.filter) ? take.filter(x => x.act === st.filter) : take).slice().sort((a, b) => a.r.date.localeCompare(b.r.date));
+    // 지출 합계: 항목 지출 − 환불 (송금·저금·그냥 지나가는 돈은 빼고)
+    const sumOut = take.reduce((a, x) => a + (x.act.startsWith('cat:') ? -x.r.amount : x.act.startsWith('ref:') ? -x.r.amount : 0), 0);
+    const o = (v, label, x) => `<option value="${esc(v)}"${sel(x) === v ? ' selected' : ''}>${esc(label)}</option>`;
     const opt = x => {
-      if (x.save) return `<option value="save"${sel(x) === 'save' ? ' selected' : ''}>저금</option><option value="skip"${sel(x) === 'skip' ? ' selected' : ''}>빼기</option>`;
-      if (x.r.amount > 0) return `<option value="in"${sel(x) === 'in' ? ' selected' : ''}>수입</option><option value="skip"${sel(x) === 'skip' ? ' selected' : ''}>빼기</option>`;
-      return cats('de').map(c => `<option value="cat:${esc(c)}"${sel(x) === 'cat:' + c ? ' selected' : ''}>${esc(c)}</option>`).join('') +
-        `<option value="xfer"${sel(x) === 'xfer' ? ' selected' : ''}>한국으로 송금</option><option value="skip"${sel(x) === 'skip' ? ' selected' : ''}>빼기</option>`;
+      if (x.save) return o('save', '저금', x) + o('skip', '빼기', x);
+      if (x.r.amount > 0) return o('in', '수입', x) + cats('de').map(c => o(`ref:${c}`, `환불 · ${c}`, x)).join('') + o('pass', '그냥 지나가는 돈', x) + o('skip', '빼기', x);
+      return cats('de').map(c => o(`cat:${c}`, c, x)).join('') + o('xfer', '한국으로 송금', x) + o('pass', '그냥 지나가는 돈', x) + o('skip', '빼기', x);
     };
-    const icoFor = x => x.act === 'xfer' ? 'xfer' : x.act === 'in' ? 'in' : x.act === 'save' ? 'piggy' : x.act === 'skip' ? 'x' : catIcon(x.act.slice(4));
+    const icoFor = x => x.act === 'xfer' || x.act === 'pass' ? 'xfer' : x.act === 'in' ? 'in' : x.act === 'save' ? 'piggy' : x.act === 'skip' ? 'x' : catIcon(x.act.slice(4));
     let h = shTop('N26 가져오기', esc(st.name)) + `<h2>${take.length}건 넣기</h2>
-      <p class="mut" style="margin:4px 0 12px;font-size:13.5px">파일에서 ${st.total}건 읽음${st.dup ? ` · 이미 있는 ${st.dup}건 건너뜀` : ''}${st.internal ? ` · 내 Space 이동 ${st.internal}건은 달마다 '저금' 한 줄로 묶음` : ''}<br>지출 합계 ${fmtEUR(sumOut)}</p>
+      <p class="mut" style="margin:4px 0 12px;font-size:13.5px">파일에서 ${st.total}건 읽음${st.dup ? ` · 이미 있는 ${st.dup}건 건너뜀` : ''}${st.manualDup ? ` · 직접 넣은 것과 같은 ${st.manualDup}건 건너뜀` : ''}${st.internal ? ` · 내 Space 이동 ${st.internal}건은 달마다 '저금' 한 줄로 묶음` : ''}<br>지출 합계 ${fmtEUR(sumOut)}</p>
       <div class="fields" style="margin-bottom:10px"><label class="f"><small>이 날짜부터</small><input class="inp" type="date" id="i-from" value="${st.from}"></label><span></span></div>
-      <div class="types" style="font-size:14px;gap:14px;flex-wrap:wrap">${[['all', '전체'], ['check', '확인 필요'], ['xfer', '송금'], ['in', '수입'], ['save', '저금'], ['skip', '뺀 것']].map(([k, l]) => `<button data-f="${k}" class="${st.filter === k ? 'on' : ''}">${l} ${counts[k]}</button>`).join('')}</div>
+      <div class="types" style="font-size:14px;gap:14px;flex-wrap:wrap">${[['all', '전체'], ['check', '확인 필요'], ['xfer', '송금'], ['in', '수입'], ['pass', '지나가는 돈'], ['save', '저금'], ['skip', '뺀 것']].filter(([k]) => k === 'all' || counts[k] || st.filter === k).map(([k, l]) => `<button data-f="${k}" class="${st.filter === k ? 'on' : ''}">${l} ${counts[k]}</button>`).join('')}</div>
       ${st.filter === 'check' ? `<p class="small-note" style="margin:6px 0 0">어느 항목인지 몰라서 '${esc(catForIcon(null))}'로 둔 거예요. 고르면 같은 곳의 다른 거래도 같이 바뀌고, 다음부터 기억해요.</p>` : ''}
+      ${st.filter === 'pass' ? `<p class="small-note" style="margin:6px 0 0">받아서 바로 넘겨준 돈(Kindergeld → 남편 등)이에요. 잔액엔 들어가고 수입·지출엔 안 들어가요. Kindergeld가 들어오고 열흘 안에 비슷한 금액을 계좌이체로 보낸 건 알아서 짝지었어요.</p>` : ''}
       <div class="imp-list">${shown.map(x => `<div class="imp${x.act === 'skip' ? ' off' : ''}">
-          <span class="ring">${ic(icoFor(x), 17)}</span>
-          <span class="m"><div class="t1">${esc(x.memo)}</div><div class="t2">${x.save ? `${+x.save.ym.slice(5)}월 · ${x.save.n}건 묶음 (${x.save.amount >= 0 ? '저금에 넣음' : '저금에서 꺼냄'})` : dayLabel(x.r.date)}${x.act === 'xfer' ? ` · €${(x.fee.eur).toLocaleString('ko-KR')}${x.fee.fee ? ` + 수수료 ${fmtEUR(x.fee.fee)}` : ''}` : ''}${x.r.ref && x.act !== 'xfer' ? ' · ' + esc(x.r.ref.slice(0, 40)) : ''}</div></span>
+          <span class="ring"${x.act === 'pass' ? ' style="border-style:dashed"' : ''}>${ic(icoFor(x), 17)}</span>
+          <span class="m"><div class="t1">${esc(x.memo)}</div><div class="t2">${x.save ? `${+x.save.ym.slice(5)}월 · ${x.save.n}건${x.save.add ? ' 더' : ''} 묶음 (${x.save.amount >= 0 ? '저금에 넣음' : '저금에서 꺼냄'})` : dayLabel(x.r.date)}${x.pairOf && x.act === 'pass' ? ` · ${esc(x.pairOf.memo)} 전달` : ''}${x.act === 'xfer' ? ` · €${(x.fee.eur).toLocaleString('ko-KR')}${x.fee.fee ? ` + 수수료 ${fmtEUR(x.fee.fee)}` : ''}` : ''}${x.r.ref && x.act !== 'xfer' ? ' · ' + esc(x.r.ref.slice(0, 40)) : ''}</div></span>
           <span class="r"><b class="num">${x.r.amount > 0 ? '+' : '−'}${fmtEUR(Math.abs(x.r.amount))}</b><select data-i="${x.i}" aria-label="항목">${opt(x)}</select></span></div>`).join('') || '<p class="empty">없어요</p>'}</div>
       <div class="imp-bar"><button class="btn wide" id="i-go"${take.length ? '' : ' disabled'}>${take.length}건 넣기</button></div>`;
     $sheet.innerHTML = h;
@@ -1046,10 +1180,13 @@ function openImport() {
       const x = st.rows[+s.dataset.i], v = s.value;
       x.act = v; x.manual = true;
       let n = 0;
-      if (x.pkey) {
-        st.rules[x.pkey] = v;
-        for (const y of st.rows) if (y !== x && !y.manual && !y.dup && y.pkey === x.pkey && Math.sign(y.r.amount) === Math.sign(x.r.amount)) { y.act = v; n++; }
+      // 같은 곳·같은 방향(들어온 돈/나간 돈)의 다른 거래도 바꾸고, 다음부터 기억 (환불 항목은 'cat:' 로 기억)
+      // 단, '그냥 지나가는 돈'으로 고른 나간 돈은 그 사람에게 보낸 모든 돈이 아닐 수 있어서 그 한 건만
+      if (x.rkey && !(v === 'pass' && x.r.amount < 0)) {
+        st.rules[x.rkey] = v.startsWith('ref:') ? `cat:${v.slice(4)}` : v;
+        for (const y of st.rows) if (y !== x && !y.manual && !y.dup && !y.save && y.rkey === x.rkey) { y.act = v; n++; }
       }
+      if (v === 'pass' && x.r.amount > 0) n += N26.pairPass(st.rows.filter(y => !y.dup && !y.hidden && !y.save)).length;
       if (n) toast(`같은 곳 ${n}건도 바꿨어요`);
       draw();
     });
@@ -1067,27 +1204,51 @@ function openImport() {
       const have = new Set(Object.values(D.tx).map(t => t.src).filter(Boolean));
       st.rows = recs.map((r, i) => {
         const s = N26.suggest(r, { rules: D.rules });
-        const act = s.type === 'out' ? `cat:${s.cat && cats('de').includes(s.cat) ? s.cat : catForIcon(s.key)}` : s.type;
-        return { i, r, act, pkey: s.pkey, memo: s.memo || r.partner || '(이름 없음)', unknown: s.type === 'out' && !s.key && !s.cat, internal: s.why === 'internal', dup: have.has(r.src), fee: N26.splitFee(r.amount) };
+        const pick = (cat, key) => cat && cats('de').includes(cat) ? cat : catForIcon(key);
+        const act = s.type === 'out' ? `cat:${pick(s.cat, s.key)}` : s.type === 'refund' ? `ref:${pick(s.cat, s.key)}` : s.type;
+        return { i, r, act, pkey: s.pkey, rkey: s.rkey, memo: s.memo || r.partner || '(이름 없음)', unknown: s.type === 'out' && !s.key && !s.cat, internal: s.why === 'internal', dup: have.has(r.src), fee: N26.splitFee(r.amount) };
       });
-      // 내 Space 이동 → 달마다 '저금' 한 줄 (src = n26save:YYYY-MM). 다시 가져오면 그 달 합계를 새로 고침
+      // 직접 넣은 기록과 같은 거래(날짜 ±3일, 같은 금액, 같은 방향)는 건너뜀 → 넣을 때 그 기록에 가져오기 표시를 붙여 둠
+      const dd = (a, b) => Math.abs(Date.UTC(+a.slice(0, 4), +a.slice(5, 7) - 1, +a.slice(8, 10)) - Date.UTC(+b.slice(0, 4), +b.slice(5, 7) - 1, +b.slice(8, 10))) / 864e5;
+      const r2 = n => Math.round(n * 100) / 100, usedManual = new Set();
+      const manual = Object.entries(D.tx).filter(([, t]) => !t.src); // 직접 넣었거나 매달 반복으로 만든 기록
+      st.manualDup = 0;
+      for (const x of st.rows) {
+        if (x.dup || x.internal) continue;
+        const amt = r2(Math.abs(x.r.amount));
+        const hit = manual.find(([id, t]) => !usedManual.has(id) && dd(t.date, x.r.date) <= 3 && (
+          x.act === 'xfer' ? t.type === 'xfer' && (r2(t.eur) === x.fee.eur || r2(t.eur + (t.fee || 0)) === amt)
+            : t.acc === 'de' && t.amount === amt && (x.r.amount > 0 ? (t.type === 'in' || (t.type === 'out' && t.refund)) : (t.type === 'out' && !t.refund))));
+        if (hit) { usedManual.add(hit[0]); x.dup = true; x.match = hit[0]; st.manualDup++; }
+      }
+      // Kindergeld 같은 '그냥 지나가는 돈'과 바로 넘겨준 이체를 짝짓기
+      N26.pairPass(st.rows.filter(x => !x.dup && !x.internal));
+      // 내 Space 이동 → 달마다 '저금' 한 줄 (src = n26save:YYYY-MM).
+      // 묶인 거래 목록(m)을 같이 저장 → 다시 가져오면 아직 안 넣은 거래만 더함 (한 달 중간부터 받은 파일이어도 안전)
       const groups = {};
-      for (const x of st.rows) if (x.internal && !D.rules[x.pkey]) {
+      for (const x of st.rows) if (x.internal) { // internal = Space 이동이고 직접 고른 규칙이 없음
         x.hidden = true;
-        const ym = x.r.date.slice(0, 7), g = groups[ym] = groups[ym] || { sum: 0, n: 0, last: x.r.date, name: '' };
-        g.sum += x.r.amount; g.n++; if (x.r.date > g.last) g.last = x.r.date;
+        const ym = x.r.date.slice(0, 7), g = groups[ym] = groups[ym] || { members: [], last: x.r.date, name: '' };
+        g.members.push({ k: x.r.src.replace(/^n26:/, ''), cents: Math.round(x.r.amount * 100), date: x.r.date });
+        if (x.r.date > g.last) g.last = x.r.date;
         if (!g.name && x.r.partner && x.r.partner !== 'Space') g.name = x.r.partner;
       }
       const bySrc = {};
       for (const [id, t] of Object.entries(D.tx)) if (t.src) bySrc[t.src] = id;
       for (const [ym, g] of Object.entries(groups)) {
-        const amount = -Math.round(g.sum * 100) / 100; // 메인 계좌에서 나간 만큼 저금 (+), 꺼내 쓴 달은 (−)
-        if (!amount) continue;
         const src = `n26save:${ym}`, oldId = bySrc[src], old = oldId && D.tx[oldId];
-        st.rows.push({ i: st.rows.length, r: { date: g.last, amount: -amount, partner: g.name, ref: '', src }, act: 'save', pkey: '', memo: g.name || '저금',
-          save: { amount, n: g.n, ym, oldId }, unknown: false, internal: false, dup: !!(old && old.amount === amount && old.n === g.n), fee: { eur: 0, fee: 0 } });
+        let members = g.members, base = { amount: 0, n: 0, m: [], date: g.last }, add = false;
+        if (old && old.m) { // 이미 넣은 묶음: 새 거래만 더함
+          const have2 = new Set(old.m); members = g.members.filter(x => !have2.has(x.k));
+          base = { amount: old.amount, n: old.n || old.m.length, m: old.m, date: old.date > g.last ? old.date : g.last }; add = true;
+        } else if (old && (old.n || 0) >= g.members.length) members = []; // 예전 방식 묶음이 이 파일보다 크거나 같으면 그대로 둠
+        const delta = -members.reduce((a, x) => a + x.cents, 0) / 100;
+        const amount = Math.round((base.amount + delta) * 100) / 100;
+        const isDup = !members.length || !amount;
+        st.rows.push({ i: st.rows.length, r: { date: base.date, amount: -amount, partner: g.name, ref: '', src }, act: 'save', pkey: '', rkey: '', memo: g.name || '저금',
+          save: { id: oldId, amount, n: base.n + members.length, m: [...base.m, ...members.map(x => x.k)], ym, add: add && members.length > 0 }, unknown: false, internal: false, dup: isDup, fee: { eur: 0, fee: 0 } });
       }
-      st.total = recs.length; st.dup = st.rows.filter(x => x.dup && !x.save).length; st.internal = st.rows.filter(x => x.hidden).length;
+      st.total = recs.length; st.dup = st.rows.filter(x => x.dup && !x.save && !x.match).length; st.internal = st.rows.filter(x => x.hidden).length;
       st.from = recs[0].date; st.step = 'list'; st.filter = 'all';
     } catch (e) {
       st.step = 'pick'; st.err = e && e.message && !/^pdf\.js$/.test(e.message) ? e.message : '파일을 못 읽었어요. 인터넷 연결(PDF 읽기 도구를 받아야 해요)과 파일을 확인해 주세요.';
@@ -1099,30 +1260,62 @@ function openImport() {
     const btn = document.getElementById('i-go'); btn.disabled = true; btn.textContent = '넣는 중…';
     const needRate = take.some(x => x.act === 'xfer');
     const rates = needRate ? await eurKrwRates(take[0].r.date) : [];
-    const now = Date.now();
+    if (needRate && !rates.length && !QUOTES['EURKRW=X']) {
+      btn.disabled = false; btn.textContent = `${take.length}건 넣기`;
+      return toast('환율을 못 받아서 송금의 원화를 채울 수 없어요. 인터넷에 연결한 뒤 다시 눌러 주세요');
+    }
+    const now = Date.now(), abs2 = n => Math.round(Math.abs(n) * 100) / 100;
     const entries = take.map((x, k) => {
       const r = x.r, base = { date: r.date, src: r.src, u: now + k };
-      if (x.act === 'save') return [x.save.oldId || newId(), { acc: 'de', type: 'save', ...base, amount: x.save.amount, n: x.save.n, memo: x.memo }];
+      if (x.act === 'save') return [x.save.id || newId(), { acc: 'de', type: 'save', ...base, amount: x.save.amount, n: x.save.n, m: x.save.m, memo: x.memo }];
       if (x.act === 'xfer') {
         const rate = rateOn(rates, r.date);
-        return [newId(), { type: 'xfer', ...base, eur: x.fee.eur, ...(x.fee.fee ? { fee: x.fee.fee } : {}), krw: Math.round(x.fee.eur * (rate || 0)), est: true, memo: x.memo }];
+        return [newId(), { type: 'xfer', ...base, eur: x.fee.eur, ...(x.fee.fee ? { fee: x.fee.fee } : {}), krw: Math.round(x.fee.eur * rate), est: true, memo: x.memo }];
       }
-      if (x.act === 'in') return [newId(), { acc: 'de', type: 'in', ...base, amount: Math.round(Math.abs(r.amount) * 100) / 100, memo: x.memo }];
-      return [newId(), { acc: 'de', type: 'out', ...base, amount: Math.round(Math.abs(r.amount) * 100) / 100, cat: x.act.slice(4), memo: x.memo }];
-    }).filter(([, t]) => t.type !== 'xfer' || t.krw > 0);
+      if (x.act === 'in') return [newId(), { acc: 'de', type: 'in', ...base, amount: abs2(r.amount), memo: x.memo }];
+      if (x.act === 'pass') return [newId(), { acc: 'de', type: r.amount > 0 ? 'in' : 'out', ...base, amount: abs2(r.amount), pass: true, ...(r.amount < 0 ? { cat: '기타' } : {}),
+        memo: x.pairOf ? `${x.memo} · ${x.pairOf.memo} 전달` : x.memo }];
+      if (x.act.startsWith('ref:')) return [newId(), { acc: 'de', type: 'out', ...base, amount: abs2(r.amount), refund: true, cat: x.act.slice(4), memo: x.memo }];
+      return [newId(), { acc: 'de', type: 'out', ...base, amount: abs2(r.amount), cat: x.act.slice(4), memo: x.memo }];
+    });
+    // 직접 넣은 것과 같았던 거래: 그 기록에 가져오기 표시(src)를 붙여서 다음에 다시 안 겹치게
+    for (const x of st.rows) if (x.match && D.tx[x.match] && !D.tx[x.match].src) entries.push([x.match, { ...D.tx[x.match], src: x.r.src }]);
     changeMany('tx', entries);
     const rules = Object.entries(st.rules).filter(([k, v]) => k && D.rules[k] !== v);
     if (rules.length) changeMany('rules', rules);
     closeSheet();
-    toast(`${entries.length}건 넣었어요`);
+    toast(`${take.length}건 넣었어요`);
   }
   openSheet(''); draw();
 }
 
 // 한국 계좌들 잔액 한꺼번에 업데이트 (토스 화면을 보고 적기). 같은 날 다시 적으면 그 날 기록을 바꿈
+// 그날 환율로 추정한 송금(Remitly 등)을 실제 받은 원화로 한꺼번에 고치기
+function openFixKrw() {
+  const list = allTx().filter(t => t.type === 'xfer' && t.est).sort((a, b) => b.date.localeCompare(a.date));
+  if (!list.length) return toast('고칠 송금이 없어요');
+  openSheet(shTop('송금 원화 고치기', '한국 계좌') + `<h2>실제 받은 원화</h2>
+    <p class="mut" style="margin:4px 0 12px;font-size:14px">은행 앱이나 Remitly 메일에서 실제로 들어온 금액을 적어 주세요. 모르는 건 비워 두면 추정값 그대로예요.</p>
+    ${list.map(t => `<div class="cat-edit" style="margin-bottom:4px"><span style="flex:1.2;min-width:0;font-size:14px"><b>${dayLabel(t.date)}</b><br><span class="mut">${fmtEUR(t.eur)} · 추정 ${fmtKRW(t.krw)}</span></span>
+      <input class="inp num" data-k="${t.id}" placeholder="₩ 받은 금액" inputmode="numeric" style="flex:1;text-align:right"></div>`).join('')}
+    <button class="btn wide" id="fk-save" style="margin-top:12px">저장</button>`);
+  document.getElementById('fk-save').onclick = () => {
+    const ch = [];
+    for (const el of $sheet.querySelectorAll('[data-k]')) {
+      const n = parseAmt(el.value, true); if (!n) continue;
+      const t = D.tx[el.dataset.k]; if (!t) continue;
+      const { est, ...rest } = t;
+      ch.push([el.dataset.k, { ...rest, krw: Math.round(n), u: Date.now() }]);
+    }
+    if (!ch.length) return toast('고친 금액이 없어요');
+    changeMany('tx', ch); closeSheet(); toast(`${ch.length}건 고쳤어요`);
+  };
+}
+
 function openKrAccounts() {
   const last = krSnap();
-  const rows = D.kr.accts.map(a => ({ id: a.id, name: a.name, v: last && a.id in last.a ? String(last.a[a.id]) : '' }));
+  const rows = D.kr.accts.filter(a => !a.off).map(a => ({ id: a.id, name: a.name, v: last && a.id in last.a ? String(last.a[a.id]) : '' }));
+  const removed = D.kr.accts.filter(a => a.off).map(a => ({ ...a })); // 뺀 계좌는 이름만 남겨 둠 (예전 잔액 기록 유지)
   if (!rows.length) rows.push({ id: newId(), name: '', v: D.bal.kr ? String(D.bal.kr.amount) : '' });
   let date = today();
   const total = () => rows.reduce((p, r) => p + (parseAmt(r.v, true) || 0) * (String(r.v).trim().startsWith('-') ? -1 : 1), 0);
@@ -1142,7 +1335,9 @@ function openKrAccounts() {
     $sheet.querySelectorAll('[data-x]').forEach(el => el.onclick = () => {
       const r = rows[+el.dataset.x];
       if (r.name && !confirm(`'${r.name}' 계좌를 목록에서 뺄까요? (해지한 계좌 등)`)) return;
-      rows.splice(+el.dataset.x, 1); draw();
+      const [gone] = rows.splice(+el.dataset.x, 1);
+      if (gone.name.trim() && D.kr.accts.some(a => a.id === gone.id)) removed.push({ id: gone.id, name: gone.name.trim(), off: true });
+      draw();
     });
     document.getElementById('ka-date').onchange = e => { date = e.target.value; };
     document.getElementById('ka-add').onclick = () => { rows.push({ id: newId(), name: '', v: '' }); draw(); $sheet.querySelector(`[data-n="${rows.length - 1}"]`)?.focus(); };
@@ -1151,7 +1346,7 @@ function openKrAccounts() {
       if (keep.some(r => !r.name.trim())) return toast('계좌 이름을 넣어 주세요');
       if (keep.some(r => parseAmt(r.v, true) == null)) return toast('잔액을 모두 넣어 주세요');
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return toast('날짜를 골라 주세요');
-      const accts = keep.map(r => ({ id: r.id, name: r.name.trim() }));
+      const accts = [...keep.map(r => ({ id: r.id, name: r.name.trim() })), ...removed.filter(x => !keep.some(r => r.id === x.id))];
       const a = Object.fromEntries(keep.map(r => [r.id, Math.round(parseAmt(r.v, true) * (String(r.v).trim().startsWith('-') ? -1 : 1))]));
       const snaps = [...(D.kr.snaps || []).filter(s => s.date !== date), { date, a }].sort((x, y) => x.date.localeCompare(y.date)).slice(-400);
       change('kr', null, { accts, snaps });
@@ -1241,6 +1436,15 @@ function openSettings() {
         `<div class="cat-edit"><span class="ring" style="border-style:dashed;border-color:var(--faint);color:var(--faint)">${ic('plus', 18, 2)}</span><input class="inp" id="n-${acc}" placeholder="새 항목 이름" maxlength="40"><button class="x-btn" data-add="${acc}" aria-label="추가" style="color:var(--ink)">${ic('plus', 20, 2.2)}</button></div>
         <p class="small-note" style="margin-top:8px">동그라미를 누르면 아이콘을 바꿀 수 있어요. 이름을 고치면 예전 기록도 같이 바뀌어요. 색은 순서대로 정해져요 (8번째까지, '기타'는 회색).</p></div>`;
     }
+    // 매달 반복
+    const recs = Object.entries(D.recur || {}).sort((a, b) => (a[1].acc + a[1].day).localeCompare(b[1].acc + b[1].day));
+    h += `<div class="sec"><h3>매달 반복</h3>${recs.length ? recs.map(([rid, r]) => {
+      const stopped = r.until && r.until < ymOf(today());
+      return `<div class="acct" style="align-items:center"><span style="min-width:0">${esc(r.memo || r.cat || (r.type === 'in' ? ACC[r.acc].inLabel : '지출'))}<br><span class="small-note">${ACC[r.acc].name} · 매달 ${r.day}일${r.cat && r.type === 'out' ? ` · ${esc(r.cat)}` : ''}${r.pass ? ' · 그냥 지나가는 돈' : ''}${stopped ? ' · 멈춤' : ''}</span></span>
+        <span style="display:flex;gap:6px;align-items:center;flex:none"><b class="num">${r.type === 'in' ? '+' : '−'}${fmtAcc(r.acc, r.amount)}</b>
+        ${stopped ? '' : `<button class="btn line small" data-rstop="${rid}">멈추기</button>`}<button class="x-btn" data-rdel="${rid}" aria-label="지우기">${ic('x', 16, 2)}</button></span></div>`;
+    }).join('') : '<p class="mut">아직 없어요.</p>'}
+      <p class="small-note" style="margin-top:8px">기록 넣기에서 <b>'매달 반복'</b>을 켜면 여기에 생겨요. 매달 그 날짜에 같은 기록을 알아서 넣어요. 멈추면 이번 달까지만 넣고, 지워도 이미 넣은 기록은 그대로예요.</p></div>`;
     const nRules = Object.keys(D.rules || {}).length;
     h += `<div class="sec"><h3>N26 거래 내역 가져오기</h3><p class="mut">N26 PDF나 CSV를 고르면 독일 계좌에 한꺼번에 넣어요.${nRules ? ` 가게 ${nRules}곳의 항목을 기억하고 있어요.` : ''}</p>
       <div class="actions"><button class="btn line" data-act="import">가져오기</button>${nRules ? '<button class="btn line" id="r-clear">기억 지우기</button>' : ''}</div></div>`;
@@ -1260,7 +1464,9 @@ function openSettings() {
     document.getElementById('b-save').onclick = () => {
       for (const [acc] of BAL_ROWS) {
         const raw = document.getElementById(`b-${acc}`).value.trim(), dt = document.getElementById(`bd-${acc}`).value;
-        const a = raw === '' ? null : (raw.startsWith('-') ? -1 : 1) * parseAmt(raw, acc === 'kr');
+        const pa = raw === '' ? null : parseAmt(raw, acc === 'kr');
+        if (raw !== '' && pa == null) { toast('잔액은 숫자로 넣어 주세요'); return; }
+        const a = pa == null ? null : (raw.startsWith('-') ? -1 : 1) * pa;
         const next = a == null || !isFinite(a) || !dt ? null : { amount: acc === 'kr' ? Math.round(a) : Math.round(a * 100) / 100, date: dt };
         if (JSON.stringify(D.bal[acc] || null) !== JSON.stringify(next)) change('bal', acc, next);
       }
@@ -1301,6 +1507,16 @@ function openSettings() {
     const rc = document.getElementById('r-clear');
     if (rc) rc.onclick = () => { if (confirm('가게별로 기억한 항목을 모두 지울까요? 넣어 둔 기록은 그대로예요.')) { changeMany('rules', Object.keys(D.rules).map(k => [k, null])); draw(); } };
     document.getElementById('k-go').onclick = () => connectKey(document.getElementById('k-in').value);
+    $sheet.querySelectorAll('[data-rstop]').forEach(b => b.onclick = () => {
+      const r = D.recur[b.dataset.rstop]; if (!r) return;
+      if (!confirm(`'${r.memo || r.cat || '반복'}' 반복을 이번 달까지만 넣고 멈출까요?`)) return;
+      change('recur', b.dataset.rstop, { ...r, until: ymOf(today()) }); draw();
+    });
+    $sheet.querySelectorAll('[data-rdel]').forEach(b => b.onclick = () => {
+      const r = D.recur[b.dataset.rdel]; if (!r) return;
+      if (!confirm(`'${r.memo || r.cat || '반복'}' 반복을 지울까요? 이미 넣은 기록은 그대로예요.`)) return;
+      change('recur', b.dataset.rdel, null); draw();
+    });
     document.getElementById('k-copy').onclick = async () => {
       try { await navigator.clipboard.writeText(link); toast('복사했어요'); }
       catch { const r = document.createRange(); r.selectNodeContents(document.getElementById('k-link')); getSelection().removeAllRanges(); getSelection().addRange(r); toast('길게 눌러 복사해 주세요'); }
@@ -1327,13 +1543,16 @@ function openSettings() {
 // ───────── 누르기 ─────────
 document.addEventListener('click', e => {
   const tb = e.target.closest('[data-tab]');
-  if (tb && !e.target.closest('#sheet')) { V.tab = tb.dataset.tab; V.cat = null; V.bar = null; render(); scrollTo(0, 0); if (V.tab !== 'de') refreshQuotes(); return; }
+  if (tb && !e.target.closest('#sheet')) { V.tab = tb.dataset.tab; V.cat = null; V.bar = null; V.q = ''; V.searching = false; render(); scrollTo(0, 0); if (V.tab !== 'de') refreshQuotes(); return; }
   const el = e.target.closest('[data-act]'); if (!el) return;
   const a = el.dataset.act, v = el.dataset.v;
   if (a === 'close') return closeSheet();
   if (a === 'settings') return openSettings();
   if (a === 'bal') return openBalance(v);
   if (a === 'kr-accts') return openKrAccounts();
+  if (a === 'search') { V.searching = !(V.searching || V.q); if (!V.searching) V.q = ''; render(); document.getElementById('hist-q')?.focus(); return; }
+  if (a === 'search-clear') { V.q = ''; V.searching = true; render(); document.getElementById('hist-q')?.focus(); return; }
+  if (a === 'fix-krw') return openFixKrw();
   if (a === 'kr-gap') {
     const g = krGap(); if (!g || Math.abs(g.gap) < 1000) return;
     const isOut = g.gap < 0;
@@ -1366,6 +1585,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && sheetOpen(
   KEY = m[1]; lsSet(LS.key, KEY); D = normalize({}); Q = {}; lsSet(LS.queue, Q); saveLocal(); lsSet('budget:pulled', true);
 })();
 
+runRecur(); // 인터넷이 없어도 이 기기 자료로 이번 달 반복 기록을 넣어 둠 (id 가 정해져 있어서 겹치지 않음)
 render();
 pull();
 refreshQuotes(true);

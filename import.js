@@ -11,12 +11,15 @@
 (function (g) {
   // ── CSV ──
   function csvRows(s) {
+    // 구분 기호는 첫 줄(제목 줄)을 보고 정함: 쉼표 CSV 안의 ';' 는 글자로 둠
+    const head = s.split(/\r?\n/, 1)[0] || '';
+    const delim = (head.match(/;/g) || []).length > (head.match(/,/g) || []).length ? ';' : ',';
     const rows = []; let row = [], f = '', q = false;
     for (let i = 0; i < s.length; i++) {
       const c = s[i];
       if (q) { if (c === '"') { if (s[i + 1] === '"') { f += '"'; i++; } else q = false; } else f += c; }
       else if (c === '"') q = true;
-      else if (c === ',' || c === ';') { row.push(f); f = ''; }
+      else if (c === delim) { row.push(f); f = ''; }
       else if (c === '\n' || c === '\r') { if (c === '\r' && s[i + 1] === '\n') i++; row.push(f); rows.push(row); row = []; f = ''; }
       else f += c;
     }
@@ -162,32 +165,72 @@
   const SALARY_RE = /staatsoberkasse|bez[üu]ge|gehalt|\blohn\b|salary/i;
   const KINDERGELD_RE = /familienkasse|kindergeld/i;
 
-  // ctx.rules = 사용자가 고친 것 { 상대방 키: 'cat:항목' | 'in' | 'xfer' | 'skip' }
+  // 사용자가 고친 것: rules { '상대방 키|-': 'cat:항목' | 'xfer' | 'skip' | 'pass', '상대방 키|+': 'in' | 'skip' | 'pass' | 'cat:항목'(환불) }
+  // 예전 규칙(부호 없는 키)은 그 부호에 맞는 값일 때만 씀
+  const ruleKey = (key, amount) => `${key}|${amount < 0 ? '-' : '+'}`;
+  function findRule(rules, key, amount) {
+    if (!rules || !key) return null;
+    const signed = rules[ruleKey(key, amount)];
+    if (signed) return signed;
+    const old = rules[key];
+    if (!old) return null;
+    if (amount < 0) return /^(cat:|xfer$|skip$|pass$)/.test(old) ? old : null;
+    return /^(in|skip|pass)$/.test(old) ? old : null;
+  }
+  // 나간 돈 아이콘 짐작 (가게 이름 → N26 분류 순서)
+  function guessKey(r) {
+    const text = `${r.partner} ${r.ref}`;
+    for (const [ico, re] of RULES) if (re.test(text)) return ico;
+    if (r.n26cat) for (const [re, ico] of N26CAT) if (re.test(r.n26cat)) return ico;
+    return null;
+  }
+
+  // 결과 type: out(지출) | in(수입) | refund(환불: 그 항목 지출에서 뺌) | xfer(한국 송금) | pass(그냥 지나가는 돈) | skip
   function suggest(r, ctx = {}) {
     const key = partnerKey(r.partner), text = `${r.partner} ${r.ref}`;
     const name = displayName(r.partner);
-    const rule = ctx.rules && ctx.rules[key];
-    if (r.internal && !rule) return { type: 'skip', why: 'internal', memo: name, pkey: key };
+    const base = { memo: name, pkey: key, rkey: key ? ruleKey(key, r.amount) : '' };
+    const rule = findRule(ctx.rules, key, r.amount);
+    if (r.internal && !rule) return { ...base, type: 'skip', why: 'internal' };
     if (rule) {
-      if (rule === 'skip') return { type: 'skip', why: 'rule', memo: name, pkey: key };
-      if (rule === 'xfer') return { type: 'xfer', memo: name, pkey: key };
-      if (rule === 'in') return { type: 'in', memo: name, pkey: key };
-      if (rule.startsWith('cat:')) return r.amount < 0 ? { type: 'out', cat: rule.slice(4), memo: name, pkey: key } : { type: 'in', memo: name, pkey: key };
+      if (rule === 'skip') return { ...base, type: 'skip', why: 'rule' };
+      if (rule === 'pass') return { ...base, type: 'pass' };
+      if (rule === 'xfer') return { ...base, type: 'xfer' };
+      if (rule === 'in') return { ...base, type: 'in' };
+      if (rule.startsWith('cat:')) return r.amount < 0 ? { ...base, type: 'out', cat: rule.slice(4) } : { ...base, type: 'refund', cat: rule.slice(4), memo: `환불 · ${name}` };
     }
     if (r.amount < 0 && XFER_RE.test(text)) {
       let m = name.replace(/\*.*$/, '').trim() || name;
       if (m === m.toUpperCase()) m = m.charAt(0) + m.slice(1).toLowerCase(); // REMITLY → Remitly
-      return { type: 'xfer', memo: m, pkey: key };
+      return { ...base, type: 'xfer', memo: m };
     }
     if (r.amount > 0) {
-      if (r.kind === 'refund') return { type: 'in', memo: `환불 · ${name}`, pkey: key };
-      if (SALARY_RE.test(text)) return { type: 'in', memo: '월급', pkey: key };
-      if (KINDERGELD_RE.test(text)) return { type: 'in', memo: 'Kindergeld', pkey: key };
-      return { type: 'in', memo: name, pkey: key };
+      if (r.kind === 'refund') {
+        // 그 가게에서 산 것과 같은 항목으로 (산 것에 고른 항목이 있으면 그것)
+        const buy = findRule(ctx.rules, key, -1);
+        return { ...base, type: 'refund', memo: `환불 · ${name}`, ...(buy && buy.startsWith('cat:') ? { cat: buy.slice(4) } : { key: guessKey(r) }) };
+      }
+      if (SALARY_RE.test(text)) return { ...base, type: 'in', memo: '월급' };
+      // Kindergeld: 받아서 바로 넘겨주는 돈이라 '그냥 지나가는 돈' (넘겨준 거래는 앱이 짝지어 줌)
+      if (KINDERGELD_RE.test(text)) return { ...base, type: 'pass', memo: 'Kindergeld' };
+      return { ...base, type: 'in' };
     }
-    for (const [ico, re] of RULES) if (re.test(text)) return { type: 'out', key: ico, memo: name, pkey: key };
-    if (r.n26cat) for (const [re, ico] of N26CAT) if (re.test(r.n26cat)) return { type: 'out', key: ico, memo: name, pkey: key };
-    return { type: 'out', key: null, memo: name, pkey: key };
+    return { ...base, type: 'out', key: guessKey(r) };
+  }
+
+  // 그냥 지나가는 돈 짝짓기: '지나감'으로 들어온 돈(예: Kindergeld) 뒤 10일 안에 계좌이체로 나간 돈 중
+  // 금액이 그 80~100% 인 첫 거래를 짝으로. rows = [{ r, act }] (날짜순), 바꾼 행 목록을 돌려줌
+  function pairPass(rows) {
+    const changed = [], used = new Set();
+    const day = d => Date.UTC(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10)) / 864e5;
+    for (const inc of rows) {
+      if (inc.act !== 'pass' || inc.r.amount <= 0) continue;
+      const m = rows.find(o => !used.has(o) && o !== inc && o.r.amount < 0 && o.r.kind === 'transfer' && o.r.iban && !o.r.internal && !o.manual && o.act !== 'pass'
+        && day(o.r.date) >= day(inc.r.date) && day(o.r.date) - day(inc.r.date) <= 10
+        && -o.r.amount <= inc.r.amount + 0.001 && -o.r.amount >= inc.r.amount * 0.8);
+      if (m) { used.add(m); m.act = 'pass'; m.pairOf = inc; changed.push(m); }
+    }
+    return changed;
   }
 
   // 같은 날 같은 금액이 여러 건이면 순서로 구분 → 'n26:2026-01-01:-5866:0'. CSV 와 PDF 가 같은 값을 만듦 (다시 올려도 안 겹침)
@@ -202,5 +245,5 @@
     return { eur: t / 100, fee: 0 };
   }
 
-  g.N26 = { parseCsv, parsePdfLines, pdfItemsToLines, suggest, withSrc, splitFee, partnerKey, displayName };
+  g.N26 = { parseCsv, parsePdfLines, pdfItemsToLines, suggest, pairPass, withSrc, splitFee, partnerKey, displayName, ruleKey };
 })(typeof window !== 'undefined' ? window : globalThis);

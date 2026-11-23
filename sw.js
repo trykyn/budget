@@ -3,11 +3,11 @@
 // 홈 화면 앱이 껐다 켜도 예전 화면을 보여 주는 일을 막음.
 // 인터넷이 약해서 3초 안에 답이 없으면 저장해 둔 화면을 먼저 보여 줌. 새 파일은 뒤에서 받아 둠.
 // 동기화 서버(workers.dev)로 가는 요청은 건드리지 않음.
-const CACHE = 'budget-v8';
+const CACHE = 'budget-v9';
 const WAIT = 3000;
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(['./', 'index.html', 'manifest.webmanifest', 'icon.svg'])));
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(['./', 'index.html', 'import.js', 'manifest.webmanifest', 'icon.svg'])));
   self.skipWaiting();
 });
 self.addEventListener('activate', e => e.waitUntil((async () => {

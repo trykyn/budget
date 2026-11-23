@@ -88,8 +88,9 @@ export default {
         data.ico = cleanIco(obj(r.ico), {});
         data.rules = cleanRules(obj(r.rules), {});
         if (r.kr) data.kr = cleanKr(obj(r.kr));
+        data.recur = cleanRecur(obj(r.recur), {});
       }
-      for (const [id, v] of Object.entries(obj(body.tx)).slice(0, 2000)) {
+      for (const [id, v] of Object.entries(obj(body.tx)).slice(0, 10000)) { // 앱은 한 번에 2500건씩 보냄
         if (!ID_RE.test(id)) continue;
         const t = v && cleanTx(v);
         if (t) data.tx[id] = t; else delete data.tx[id];
@@ -104,6 +105,7 @@ export default {
       if (body.ico) data.ico = cleanIco(obj(body.ico), data.ico || {});
       if (body.rules) data.rules = cleanRules(obj(body.rules), data.rules || {});
       if (body.kr) data.kr = cleanKr(obj(body.kr));
+      if (body.recur) data.recur = cleanRecur(obj(body.recur), data.recur || {});
 
       // 바뀐 게 없으면 저장하지 않음 (무료 요금제 하루 저장 횟수 아끼기)
       if (JSON.stringify(data) !== before) await env.STORE.put(sk, JSON.stringify(data));
@@ -131,15 +133,34 @@ function cleanTx(v) {
     return { type: "xfer", date, eur: round2(eur), krw: Math.round(krw), fee: fee && fee > 0 ? round2(fee) : undefined, memo: str(v.memo, 200), est: v.est ? true : undefined, src: str(v.src, 64), u };
   }
   // 저금: 내 Space 등으로 옮긴 돈 (+ 넣음 / − 꺼냄). n = 가져오기에서 묶은 건수
+  // m = 묶인 거래들 "날짜:센트:순번" (다시 가져올 때 이미 넣은 것만 빼고 더하려고, 잔액 기준일 계산에도 씀)
   if (v.type === "save") {
     const a = num(v.amount), n = num(v.n);
     if (!["kr", "de"].includes(v.acc) || a == null || !a || Math.abs(a) > 1e9) return null;
-    return { acc: v.acc, type: "save", date, amount: round2(a), n: n && n > 0 ? Math.min(Math.round(n), 10000) : undefined, memo: str(v.memo, 200), src: str(v.src, 64), u };
+    const m = Array.isArray(v.m) ? [...new Set(v.m.map(String).filter(x => /^\d{4}-\d\d-\d\d:-?\d{1,12}:\d{1,4}$/.test(x)))].slice(0, 400) : undefined;
+    return { acc: v.acc, type: "save", date, amount: round2(a), n: n && n > 0 ? Math.min(Math.round(n), 10000) : undefined, m: m && m.length ? m : undefined, memo: str(v.memo, 200), src: str(v.src, 64), u };
   }
   if (!["kr", "de"].includes(v.acc) || !["in", "out"].includes(v.type)) return null;
   const amount = num(v.amount);
   if (amount == null || amount <= 0 || amount > 1e12) return null;
-  return { acc: v.acc, type: v.type, date, amount: v.acc === "kr" ? Math.round(amount) : round2(amount), cat: str(v.cat, 40), memo: str(v.memo, 200), src: str(v.src, 64), u };
+  // pass = 그냥 지나가는 돈 (예: Kindergeld 받아서 바로 남편에게) → 잔액엔 들어가고 수입·지출엔 안 셈
+  // refund = 환불 (지출 항목에서 빼는 돈), rec = 매달 반복에서 만든 기록 "반복 id:YYYY-MM"
+  return { acc: v.acc, type: v.type, date, amount: v.acc === "kr" ? Math.round(amount) : round2(amount), cat: str(v.cat, 40), memo: str(v.memo, 200), src: str(v.src, 64),
+    pass: v.pass ? true : undefined, refund: v.type === "out" && v.refund ? true : undefined, rec: str(v.rec, 40), u };
+}
+
+// 매달 반복: { id: { acc, type in|out, amount, cat?, memo?, day 1-28, from 'YYYY-MM', until? 'YYYY-MM', pass? } | null }
+function cleanRecur(b, old) {
+  const out = { ...old };
+  for (const [id, v] of Object.entries(b).slice(0, 100)) {
+    if (!ID_RE.test(id)) continue;
+    const a = v && num(v.amount), day = v && num(v.day);
+    const ok = v && ["kr", "de"].includes(v.acc) && ["in", "out"].includes(v.type) && a > 0 && a < 1e12 && day >= 1 && day <= 28 && /^\d{4}-\d\d$/.test(v.from || "");
+    if (!ok) { delete out[id]; continue; }
+    out[id] = { acc: v.acc, type: v.type, amount: v.acc === "kr" ? Math.round(a) : round2(a), cat: str(v.cat, 40), memo: str(v.memo, 200), day: Math.round(day), from: v.from,
+      until: /^\d{4}-\d\d$/.test(v.until || "") ? v.until : undefined, last: /^\d{4}-\d\d$/.test(v.last || "") ? v.last : undefined, pass: v.pass ? true : undefined };
+  }
+  return Object.fromEntries(Object.entries(out).slice(-100));
 }
 
 // 종목 하나: acc 'kr'|'de' (어느 증권 계좌), sym 야후 기호, qty 주 수, avg 평균 매수가(그 종목 통화)
@@ -174,9 +195,9 @@ function cleanIco(b, old) {
 function cleanRules(b, old) {
   const out = { ...old };
   for (const [k, v] of Object.entries(b).slice(0, 1000)) {
-    const name = String(k).trim().slice(0, 40);
+    const name = String(k).trim().slice(0, 44); // "상대방 키|+" 또는 "|-" (돈이 들어온 거래 / 나간 거래)
     if (!name) continue;
-    if (typeof v === "string" && /^(cat:.{1,40}|in|xfer|skip)$/.test(v)) out[name] = v; else delete out[name];
+    if (typeof v === "string" && /^(cat:.{1,40}|in|xfer|skip|pass)$/.test(v)) out[name] = v; else delete out[name];
   }
   return Object.fromEntries(Object.entries(out).slice(-1000));
 }
@@ -184,8 +205,9 @@ function cleanRules(b, old) {
 // 한국 계좌 여러 개: { accts: [{ id, name }], snaps: [{ date, a: { 계좌 id: 잔액 } }] }
 // 토스 등을 보고 가끔 한꺼번에 적는 잔액 기록. 마지막 기록 = 지금 총잔액의 기준
 function cleanKr(v) {
-  const accts = (Array.isArray(v.accts) ? v.accts : []).slice(0, 30)
-    .map(a => ({ id: String(a && a.id || ""), name: String(a && a.name || "").trim().slice(0, 40) }))
+  // off = 목록에서 뺀 계좌 (예전 잔액 기록은 남겨 둠)
+  const accts = (Array.isArray(v.accts) ? v.accts : []).slice(0, 60)
+    .map(a => ({ id: String(a && a.id || ""), name: String(a && a.name || "").trim().slice(0, 40), off: a && a.off ? true : undefined }))
     .filter(a => ID_RE.test(a.id) && a.name);
   const ids = new Set(accts.map(a => a.id)), byDate = {};
   for (const s of (Array.isArray(v.snaps) ? v.snaps : []).slice(-400)) {

@@ -28,7 +28,27 @@ ok(JSON.stringify(N26.splitFee(-3001.99)) === '{"eur":3000,"fee":1.99}', 'fee sp
 ok(s[3].type === 'in' && s[3].memo === '월급', 'salary');
 ok(s[4].type === 'out' && s[4].key === 'tram', 'mvg tram');
 ok(r[4].src !== r[5].src && r[4].src.endsWith(':0') && r[5].src.endsWith(':1'), 'same day same amount → different src');
-ok(s[6].type === 'in' && s[6].memo.startsWith('환불'), 'refund');
+ok(s[6].type === 'refund' && s[6].memo.startsWith('환불') && s[6].key === 'bag', 'refund → 환불 (그 가게 항목)');
+// 환불: 그 가게에서 산 것에 고른 항목을 따라감
+ok(N26.suggest(r[6], { rules: { [N26.ruleKey(N26.partnerKey('Uniqlo'), -1)]: 'cat:아이들' } }).cat === '아이들', 'refund follows purchase rule');
+// 부호 있는 규칙: 환불을 '빼기'로 해도 산 것은 안 빠짐
+ok(N26.suggest(r[1], { rules: { [N26.ruleKey(N26.partnerKey('REWE Markt'), 1)]: 'skip' } }).type === 'out', 'signed rule: + skip does not hit purchases');
+// 예전(부호 없는) 규칙 'in' 은 나간 돈에는 안 씀
+ok(N26.suggest(r[1], { rules: { [N26.partnerKey('REWE Markt')]: 'in' } }).type === 'out', 'legacy in-rule ignored for negatives');
+// Kindergeld → 그냥 지나가는 돈, 열흘 안에 80~100% 계좌이체를 짝지음 (가짜 이름)
+{
+  const kg = { date: '2026-02-03', amount: 518, partner: 'Bundesagentur für Arbeit - Familienkasse', iban: true, kind: 'transfer', ref: 'Kindergeld', internal: false };
+  const sendA = { date: '2026-02-03', amount: -500, partner: 'Max Mustermann', iban: true, kind: 'transfer', ref: '', internal: false };
+  const card = { date: '2026-02-04', amount: -500, partner: 'Shop', iban: false, kind: 'card', ref: '', internal: false };
+  const rows = [kg, card, sendA].map(r => ({ r, act: N26.suggest(r, {}).type }));
+  ok(rows[0].act === 'pass', 'kindergeld pass');
+  const ch = N26.pairPass(rows);
+  ok(ch.length === 1 && ch[0].r === sendA && rows[2].act === 'pass' && rows[1].act === 'out', 'kindergeld pairs with the transfer, not the card payment');
+  const late = [{ r: kg, act: 'pass' }, { r: { ...sendA, date: '2026-02-20' }, act: 'out' }];
+  ok(N26.pairPass(late).length === 0, 'no pair after 10 days');
+}
+// 쉼표 CSV 안의 ';' 는 칸 나눔이 아님
+ok(N26.parseCsv(csv.split('\n').slice(0, 1).concat('2026-01-07,2026-01-07,"Shop",,Presentment,Ref;with;semicolons,Hauptkonto,-5.00,,,').join('\n')).length === 1, 'semicolon inside comma csv');
 ok(N26.suggest({ partner: 'EGYM Wellpass GmbH', ref: 'EGYM Wellpass 01-2026', amount: -54.9, kind: 'debit' }).key === 'lotus', 'wellness');
 ok(N26.suggest({ partner: 'PAYPAL *Spaeter zahlen', ref: '', amount: -91, kind: 'card' }).key !== 'lotus', 'spaeter is not spa');
 ok(N26.suggest(r[1], { rules: { [N26.partnerKey('REWE Markt')]: 'cat:외식' } }).cat === '외식', 'user rule wins');
