@@ -219,7 +219,7 @@ label.f > small { display: block; font-size: 12px; color: var(--mut); font-weigh
 <script src="import.js"></script>
 <script>
 // ───────── 설정 ─────────
-const VERSION = '2026-11-23 · 8';
+const VERSION = '2026-11-23 · 9';
 const API = 'https://budget-sync.weekly-meals-reader.workers.dev';
 const APP_URL = 'https://trykyn.github.io/budget/';
 const LS = { key: 'budget:key', data: 'budget:data', queue: 'budget:queue', quotes: 'budget:quotes', view: 'budget:view' };
@@ -569,8 +569,9 @@ function renderAccount(acc) {
       // 한국 계좌는 소득이 없어서 '남은 돈' 대신 총잔액이 맨 위 (계좌별 잔액 + 그 뒤 기록)
       ? `<div class="hero">${bal != null ? fmtKRW(bal) : '₩ –'}</div>
     <div class="hero-sub"><span>한국 계좌 총잔액${(() => { const ks = krSnap(); if (!ks || ks.date === today()) { const n = D.kr.accts.filter(a => !a.off).length; return n ? ` · 계좌 ${n}개` : ''; } const [, m, d] = ks.date.split('-').map(Number); return ` · ${m}월 ${d}일 잔액 + 그 뒤 기록`; })()}</span><button data-act="kr-accts">${bal != null ? '잔액 업데이트 ›' : '계좌 잔액 적기 ›'}</button></div>`
-      : `<div class="hero">${signed(f, s.net)}</div>
-    <div class="hero-sub"><span>${V.mode === 'year' ? '올해' : '이번 달'} 남은 돈</span>${bal != null ? `<button data-act="bal" data-v="${acc}">잔액 ${f(bal)} ›</button>` : `<button data-act="bal" data-v="${acc}">잔액 맞추기 ›</button>`}</div>`}`;
+      // 독일 계좌도 맨 위는 통장 잔액 (맞춘 잔액 + 그 뒤 기록)
+      : `<div class="hero">${bal != null ? fmtEUR(bal) : '€ –'}</div>
+    <div class="hero-sub"><span>독일 계좌 잔액${(() => { const b = D.bal.de; if (!b || b.date === today()) return ''; const [, m, d] = b.date.split('-').map(Number); return ` · ${m}월 ${d}일 잔액 + 그 뒤 기록`; })()}</span><button data-act="bal" data-v="de">${bal != null ? '잔액 맞추기 ›' : 'N26 잔액 적기 ›'}</button></div>`}`;
   if (acc === 'kr') {
     h += `<div class="three"><div>들어온 돈<b>${f(s.inc)}</b></div><div>나간 돈<b>${f(s.out)}</b></div><div>독일에서<b>${fmtEUR(s.xEur)}</b></div></div>`;
     if (s.xKrw) h += `<div class="note-line">${ic('xfer', 16)}<span>${fmtEUR(s.xEur)} 보내서 <b>${fmtKRW(s.xKrw)}</b> 받음 · 평균 1€ = ${fmtKRW(s.xKrw / s.xEur)}</span></div>`;
