@@ -219,7 +219,7 @@ label.f > small { display: block; font-size: 12px; color: var(--mut); font-weigh
 <script src="import.js"></script>
 <script>
 // ───────── 설정 ─────────
-const VERSION = '2026-11-23 · 10';
+const VERSION = '2026-11-23 · 11';
 const API = 'https://budget-sync.weekly-meals-reader.workers.dev';
 const APP_URL = 'https://trykyn.github.io/budget/';
 const LS = { key: 'budget:key', data: 'budget:data', queue: 'budget:queue', quotes: 'budget:quotes', view: 'budget:view' };
@@ -388,6 +388,7 @@ function migrate() {
   if (lsGet('budget:mig-wellness', false)) return;
   lsSet('budget:mig-wellness', true);
   if (D.cats.de && D.cats.de.includes('웰니스')) return; // 다른 기기에서 이미 함
+  if (!Object.keys(D.tx).length) return; // 빈 가계부(처음 연 기기): 기본 목록이 이미 새 것이라 고칠 게 없음 (서버에 빈 가계부를 만들지 않음)
   {
     const list = (D.cats.de && D.cats.de.length ? D.cats.de : DEFAULT_CATS.de).filter(c => c !== '월세');
     if (!list.includes('웰니스')) { const at = list.indexOf('쇼핑·여행') >= 0 ? list.indexOf('쇼핑·여행') : list.indexOf('기타'); if (at >= 0) list.splice(at, 0, '웰니스'); else list.push('웰니스'); }
