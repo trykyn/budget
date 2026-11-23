@@ -215,7 +215,7 @@ label.f > small { display: block; font-size: 12px; color: var(--mut); font-weigh
 <script src="import.js"></script>
 <script>
 // ───────── 설정 ─────────
-const VERSION = '2026-11-23 · 4';
+const VERSION = '2026-11-23 · 5';
 const API = 'https://budget-sync.weekly-meals-reader.workers.dev';
 const APP_URL = 'https://trykyn.github.io/budget/';
 const LS = { key: 'budget:key', data: 'budget:data', queue: 'budget:queue', quotes: 'budget:quotes', view: 'budget:view' };
@@ -492,7 +492,7 @@ function renderAccount(acc) {
     <div class="arrows"><button data-act="prev" aria-label="이전">${ic('left', 18, 2.2)}</button><span>${periodLabel()}</span><button data-act="next" aria-label="다음">${ic('right', 18, 2.2)}</button></div>
     <div class="mode"><button data-act="mode" data-v="month" class="${V.mode === 'month' ? 'on' : ''}">월</button><button data-act="mode" data-v="year" class="${V.mode === 'year' ? 'on' : ''}">연</button></div></div>
     <div class="hero">${signed(f, s.net)}</div>
-    <div class="hero-sub"><span>${V.mode === 'year' ? '올해' : '이번 달'} 남은 돈</span>${bal != null ? `<button data-act="settings">잔액 ${f(bal)}</button>` : `<button data-act="settings">잔액 맞추기 ›</button>`}</div>`;
+    <div class="hero-sub"><span>${V.mode === 'year' ? '올해' : '이번 달'} 남은 돈</span>${bal != null ? `<button data-act="bal" data-v="${acc}">잔액 ${f(bal)} ›</button>` : `<button data-act="bal" data-v="${acc}">잔액 맞추기 ›</button>`}</div>`;
   if (acc === 'kr') {
     h += `<div class="three"><div>들어온 돈<b>${f(s.inc)}</b></div><div>나간 돈<b>${f(s.out)}</b></div><div>독일에서<b>${fmtEUR(s.xEur)}</b></div></div>`;
     if (s.xKrw) h += `<div class="note-line">${ic('xfer', 16)}<span>${fmtEUR(s.xEur)} 보내서 <b>${fmtKRW(s.xKrw)}</b> 받음 · 평균 1€ = ${fmtKRW(s.xKrw / s.xEur)}</span></div>`;
@@ -500,7 +500,10 @@ function renderAccount(acc) {
     h += `<div class="three"><div>수입<b>${f(s.inc)}</b></div><div>지출<b>${f(s.out)}</b></div><div>한국으로<b>${f(s.xfer)}</b></div></div>`;
     if (s.xKrw) h += `<div class="note-line">${ic('xfer', 16)}<span>한국 계좌에 <b>${fmtKRW(s.xKrw)}</b> 들어감 · 평균 1€ = ${fmtKRW(s.xKrw / s.xEur)}</span></div>`;
     const sv = savingsNow();
-    if (sv || s.sav) h += `<button class="note-line" data-act="settings" style="width:100%;text-align:left">${ic('piggy', 16)}<span>${V.mode === 'year' ? '올해' : '이번 달'} 저금 <b>${signed(fmtEUR, s.sav)}</b>${sv ? ` · 모은 돈 <b>${fmtEUR(sv.total)}</b>${sv.based ? '' : ' <span class="mut">(넣은 기록만)</span>'}` : ''}</span></button>`;
+    // 저금 줄: 누르면 모은 돈(저금 Space 잔액)을 바로 고칠 수 있음
+    h += `<button class="note-line" data-act="bal" data-v="sv" style="width:100%;text-align:left">${ic('piggy', 16)}<span style="flex:1">${sv || s.sav
+      ? `${V.mode === 'year' ? '올해' : '이번 달'} 저금 <b>${signed(fmtEUR, s.sav)}</b>${sv ? ` · 모은 돈 <b>${fmtEUR(sv.total)}</b>${sv.based ? '' : ' <span class="mut">(넣은 기록만 · 눌러서 맞추기)</span>'}` : ''}`
+      : '저금(Space) 잔액 맞추기'}</span>${ic('right', 14, 2)}</button>`;
   }
   if (acc === 'kr' && Object.keys(D.stocks).length) {
     const P = portfolio(), g = P.gainPct != null;
@@ -1072,6 +1075,34 @@ function openImport() {
   openSheet(''); draw();
 }
 
+// 잔액 바로 고치기: 'kr' | 'de' | 'sv'(모은 돈 = 저금 Space 잔액). 그 날짜 뒤의 기록으로 지금 값을 계속 계산
+function openBalance(k) {
+  const L = { kr: ['한국 계좌 잔액', '은행 앱에 보이는 한국 계좌 잔액을 적어 주세요.'], de: ['독일 계좌 잔액', 'N26 앱 메인 계좌 잔액을 적어 주세요.'], sv: ['모은 돈 (저금)', 'N26 앱의 Space(비상금 등) 잔액을 적어 주세요. 여러 Space면 더한 값으로요.'] }[k];
+  if (!L) return;
+  const cur = k === 'kr' ? '₩' : '€', fmt = n => k === 'kr' ? fmtKRW(n) : fmtEUR(n);
+  const b = D.bal[k] || {};
+  const now = k === 'sv' ? savingsNow()?.total : balanceNow(k);
+  openSheet(shTop('잔액 맞추기', '') + `<h2>${L[0]}</h2>
+    <p class="mut" style="margin:4px 0 14px;font-size:14px">${L[1]} 이 날짜 뒤에 넣은 기록으로 지금 값을 계속 계산해요.${now != null ? `<br>지금 앱에서 계산한 값: <b>${fmt(now)}</b>` : ''}</p>
+    <div class="big-in"><span>${cur}</span><input id="bl-amt" inputmode="decimal" autocomplete="off" value="${b.amount != null ? String(b.amount).replace('.', k === 'kr' ? '.' : ',') : ''}" placeholder="0" aria-label="금액"></div><div class="hint" id="bl-h"></div>
+    <div class="fields"><label class="f"><small>이 날 끝 기준</small><input class="inp" type="date" id="bl-date" value="${b.date || today()}"></label><span></span></div>
+    <div class="actions">${D.bal[k] ? '<button class="btn danger" id="bl-del">맞춘 값 지우기</button>' : ''}<button class="btn" id="bl-save">저장</button></div>`);
+  const inp = document.getElementById('bl-amt'), hint = document.getElementById('bl-h');
+  const read = () => { const raw = inp.value.trim(); if (!raw) return null; const n = parseAmt(raw, k === 'kr'); return n == null ? null : (raw.startsWith('-') ? -n : n); };
+  inp.oninput = () => { const n = read(); hint.textContent = n != null ? `= ${fmt(n)}` : ''; };
+  inp.oninput();
+  document.getElementById('bl-save').onclick = () => {
+    const n = read(), dt = document.getElementById('bl-date').value;
+    if (n == null) return toast('금액을 넣어 주세요');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dt)) return toast('날짜를 골라 주세요');
+    change('bal', k, { amount: k === 'kr' ? Math.round(n) : Math.round(n * 100) / 100, date: dt });
+    closeSheet(); toast('저장했어요');
+  };
+  const del = document.getElementById('bl-del');
+  if (del) del.onclick = () => { if (confirm('맞춘 잔액을 지울까요? 기록은 그대로예요.')) { change('bal', k, null); closeSheet(); toast('지웠어요'); } };
+  setTimeout(() => inp.focus(), 250);
+}
+
 const BAL_ROWS = [['kr', '한국 계좌 잔액 (₩)'], ['de', '독일 계좌 잔액 (€)'], ['sv', '모은 돈 · 저금 Space 잔액 (€)']];
 
 // 다른 기기의 가계부에 이 기기를 연결 (링크나 키를 붙여넣기).
@@ -1213,6 +1244,7 @@ document.addEventListener('click', e => {
   const a = el.dataset.act, v = el.dataset.v;
   if (a === 'close') return closeSheet();
   if (a === 'settings') return openSettings();
+  if (a === 'bal') return openBalance(v);
   if (a === 'import') return openImport();
   if (a === 'add') return openTx(V.tab);
   if (a === 'edit') { if (D.tx[el.dataset.id]) openTx(V.tab, el.dataset.id); return; }
