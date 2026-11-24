@@ -168,7 +168,8 @@ function cleanStock(v) {
   if (!v || typeof v !== "object" || !["kr", "de"].includes(v.acc) || !SYM_RE.test(v.sym || "")) return null;
   const qty = num(v.qty), avg = num(v.avg);
   if (qty == null || qty < 0) return null;
-  return { acc: v.acc, sym: v.sym, name: str(v.name, 80), cur: str(v.cur, 6), qty: Math.round(qty * 1e6) / 1e6, avg: avg != null && avg > 0 ? avg : undefined, u: num(v.u) || Date.now() };
+  // ba = 증권 계좌 이름 (같은 종목을 여러 계좌에 따로 갖고 있을 때)
+  return { acc: v.acc, sym: v.sym, name: str(v.name, 80), cur: str(v.cur, 6), ba: str(v.ba, 30), qty: Math.round(qty * 1e6) / 1e6, avg: avg != null && avg > 0 ? avg : undefined, u: num(v.u) || Date.now() };
 }
 
 function cleanCats(c, old) {
@@ -214,7 +215,8 @@ function cleanKr(v) {
     if (!s || !DATE_RE.test(s.date || "")) continue;
     const a = {};
     for (const [id, n] of Object.entries(s.a && typeof s.a === "object" ? s.a : {})) { const x = num(n); if (ids.has(id) && x != null && Math.abs(x) < 1e13) a[id] = Math.round(x); }
-    byDate[s.date] = { date: s.date, a };
+    const t = num(s.t);
+    byDate[s.date] = { date: s.date, a, ...(t > 0 ? { t: Math.round(t) } : {}) };
   }
   return { accts, snaps: Object.values(byDate).sort((x, y) => x.date.localeCompare(y.date)) };
 }
@@ -225,7 +227,8 @@ function cleanBal(b, old) {
   for (const acc of ["kr", "de", "sv"]) { // sv = 저금 Space 잔액
     if (!(acc in b)) continue;
     const v = b[acc], a = v && num(v.amount);
-    if (v && a != null && DATE_RE.test(v.date || "")) out[acc] = { amount: a, date: v.date }; else delete out[acc];
+    const t = v && num(v.t); // t = 잔액을 맞춘 시각 (같은 날 그 뒤에 적은 기록만 더함)
+    if (v && a != null && DATE_RE.test(v.date || "")) out[acc] = { amount: a, date: v.date, ...(t > 0 ? { t: Math.round(t) } : {}) }; else delete out[acc];
   }
   return out;
 }

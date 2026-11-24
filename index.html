@@ -219,7 +219,7 @@ label.f > small { display: block; font-size: 12px; color: var(--mut); font-weigh
 <script src="import.js"></script>
 <script>
 // ───────── 설정 ─────────
-const VERSION = '2026-11-23 · 11';
+const VERSION = '2026-11-24 · 12';
 const API = 'https://budget-sync.weekly-meals-reader.workers.dev';
 const APP_URL = 'https://trykyn.github.io/budget/';
 const LS = { key: 'budget:key', data: 'budget:data', queue: 'budget:queue', quotes: 'budget:quotes', view: 'budget:view' };
@@ -501,15 +501,27 @@ function saveAfter(t, date) {
   for (const x of t.m) { const [d, cents] = x.split(':'); if (d > date) c -= +cents; }
   return Math.round(c) / 100;
 }
-// 기록 하나가 기준일(date) 뒤에 계좌에 준 변화
-function flowAfter(t, acc, date) {
-  if (t.type === 'save' && t.acc === acc) return -saveAfter(t, date);
-  return t.date > date ? flow(effect(t, acc)) : 0;
+// 기록을 처음 만든 때 (id 앞부분 = 만든 시각)
+function madeAt(t) {
+  const n = parseInt(String(t.id || '').slice(0, 8), 36);
+  return n > 1.7e12 && n < 4.1e12 ? n : (t.u || 0);
+}
+// 기준 잔액(b = { date, t? }) 뒤에 생긴 기록인지. 같은 날이면: 은행에서 가져온 기록은 이미 잔액에 들어 있다고 보고,
+// 손으로 적은 기록은 잔액을 맞춘 뒤(t)에 만든 것만 셈. 예전 기준(t 없음)은 같은 날 손으로 적은 기록을 모두 셈
+function isAfter(t, b) {
+  if (t.date !== b.date) return t.date > b.date;
+  if (t.src) return false;
+  return b.t ? madeAt(t) > b.t : true;
+}
+// 기록 하나가 기준(b) 뒤에 계좌에 준 변화
+function flowAfter(t, acc, b) {
+  if (t.type === 'save' && t.acc === acc) return t.m && t.m.length ? -saveAfter(t, b.date) : (isAfter(t, b) ? -t.amount : 0);
+  return isAfter(t, b) ? flow(effect(t, acc)) : 0;
 }
 // 한국 계좌들: 가장 최근에 한꺼번에 적은 잔액 { date, total, a }
 const snapTotal = (s, ids) => Object.entries(s.a).reduce((p, [id, n]) => p + (!ids || ids.has(id) ? n : 0), 0);
 function krSnaps() { return (D.kr.snaps || []).filter(s => Object.keys(s.a).length).slice().sort((a, b) => a.date.localeCompare(b.date)); }
-function krSnap() { const s = krSnaps().at(-1); return s ? { date: s.date, total: snapTotal(s), a: s.a } : null; }
+function krSnap() { const s = krSnaps().at(-1); return s ? { date: s.date, t: s.t, total: snapTotal(s), a: s.a } : null; }
 // 기록 안 한 돈: 지난번 잔액 합계 + 그 사이 기록 vs 이번 잔액 합계.
 // 계좌 목록이 바뀐 때(새 계좌·뺀 계좌)는 옮긴 돈인지 알 수 없어서 비교하지 않음
 function krGap() {
@@ -518,20 +530,20 @@ function krGap() {
   const a = Object.keys(prev.a).sort().join(','), b = Object.keys(last.a).sort().join(',');
   if (a !== b) return { from: prev.date, to: last.date, changed: true };
   let expect = snapTotal(prev);
-  for (const t of txOf('kr')) if (t.date <= last.date) expect += flowAfter(t, 'kr', prev.date);
+  for (const t of txOf('kr')) if (!isAfter(t, last)) expect += flowAfter(t, 'kr', prev);
   return { from: prev.date, to: last.date, gap: Math.round(snapTotal(last) - expect) };
 }
 function balanceNow(acc) {
   const ks = acc === 'kr' && krSnap();
-  const b = ks ? { amount: ks.total, date: ks.date } : D.bal[acc]; if (!b) return null;
+  const b = ks ? { amount: ks.total, date: ks.date, t: ks.t } : D.bal[acc]; if (!b) return null;
   let v = b.amount;
-  for (const t of txOf(acc)) v += flowAfter(t, acc, b.date);
+  for (const t of txOf(acc)) v += flowAfter(t, acc, b);
   return v;
 }
 // 모은 돈: 설정에서 맞춘 저금 잔액(bal.sv) + 그 뒤 저금 기록. 안 맞췄으면 가계부에 넣은 저금만 더함
 function savingsNow() {
   const b = D.bal.sv; let v = b ? b.amount : 0, any = !!b;
-  for (const t of allTx()) if (t.type === 'save') { v += b ? saveAfter(t, b.date) : t.amount; any = true; }
+  for (const t of allTx()) if (t.type === 'save') { v += b ? (t.m && t.m.length ? saveAfter(t, b.date) : (isAfter(t, b) ? t.amount : 0)) : t.amount; any = true; }
   return any ? { total: v, based: !!b } : null;
 }
 function catColor(acc, c) {
@@ -726,6 +738,25 @@ function renderHistory(acc, list) {
 
 // ───────── 주식 ─────────
 const holdings = () => Object.entries(D.stocks).map(([id, s]) => ({ id, ...s }));
+// 같은 종목을 여러 증권 계좌에 갖고 있으면 한 줄로 합침: 수량은 더하고, 평단은 수량으로 가중 평균 (계좌마다 평단이 있을 때만)
+function stockGroups() {
+  const m = new Map();
+  for (const h of holdings()) {
+    const g = m.get(h.sym) || { sym: h.sym, name: h.name, cur: h.cur, items: [] };
+    g.items.push(h); if (!g.name && h.name) g.name = h.name; if (!g.cur && h.cur) g.cur = h.cur;
+    m.set(h.sym, g);
+  }
+  for (const g of m.values()) {
+    g.items.sort((a, b) => (a.ba || '').localeCompare(b.ba || '', 'ko'));
+    g.qty = g.items.reduce((p, h) => p + h.qty, 0);
+    const all = g.items.every(h => h.avg);
+    g.avg = all && g.qty ? g.items.reduce((p, h) => p + h.avg * h.qty, 0) / g.qty : null;
+  }
+  return [...m.values()];
+}
+// 증권 계좌 이름들 (고를 수 있게)
+const brokerNames = () => [...new Set(holdings().map(h => h.ba).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ko'));
+const qtyTxt = n => String(+n.toFixed(6));
 const fxKRW = cur => !cur || cur === 'KRW' ? 1 : QUOTES[`${cur}KRW=X`]?.p;
 function hv(h) {
   const q = QUOTES[h.sym]; if (!q) return { q: null };
@@ -780,20 +811,22 @@ function renderStocks() {
     <div>산 돈 (평단)<b>${P.cost != null ? fmtKRW(P.cost) : '–'}</b></div>
     <div>오늘<b class="${dir(P.today)}" style="font-size:14px">${P.todayPct != null ? pctTxt(P.todayPct) : '–'}</b></div></div>`;
   if (P.missing) h += `<div class="note-line">평단이 없는 종목 ${P.missing}개는 수익률에서 빠져요. 종목을 눌러 평단을 넣어 주세요.</div>`;
-  const rows = list.map(x => ({ x, v: hv(x) })).sort((a, b) => (b.v.val ?? -1) - (a.v.val ?? -1));
-  h += `<section><h5><span>내 종목 ${list.length}</span><button class="pill" data-act="stock-add">${ic('plus', 15, 2.4)} 종목 추가</button></h5>`;
+  const groups = stockGroups();
+  const rows = groups.map(x => ({ x, v: hv(x) })).sort((a, b) => (b.v.val ?? -1) - (a.v.val ?? -1));
+  h += `<section><h5><span>내 종목 ${groups.length}</span><button class="pill" data-act="stock-add">${ic('plus', 15, 2.4)} 종목 추가</button></h5>`;
   for (const { x, v } of rows) {
     const q = v.q, cur = q?.cur || x.cur;
     const mo = q?.closes?.length > 1 ? q.closes.at(-1) - q.closes[0] : 0;
-    const g = v.gainPct;
-    h += `<button class="stock" data-act="stock" data-id="${x.id}">
-      <span style="min-width:0"><div class="nm">${esc(x.name || x.sym)}</div><div class="t2">${+x.qty.toFixed(6)}주 · ${x.avg ? `평단 ${fmtCur(cur, x.avg)}` : '<b style="color:var(--ink)">평단 넣기</b>'}</div><div class="t2">지금 ${q ? fmtCur(cur, q.p) : '–'}${q?.chg != null ? ` · 오늘 ${signedPct(q.chg)}` : ''}</div></span>
+    const g = v.gainPct, n = x.items.length;
+    const where = n > 1 ? ` · 계좌 ${n}곳` : x.items[0].ba ? ` · ${esc(x.items[0].ba)}` : '';
+    h += `<button class="stock" data-act="stock" data-sym="${esc(x.sym)}">
+      <span style="min-width:0"><div class="nm">${esc(x.name || x.sym)}</div><div class="t2">${qtyTxt(x.qty)}주 · ${x.avg ? `${n > 1 ? '합친 ' : ''}평단 ${fmtCur(cur, x.avg)}` : '<b style="color:var(--ink)">평단 넣기</b>'}${where}</div><div class="t2">지금 ${q ? fmtCur(cur, q.p) : '–'}${q?.chg != null ? ` · 오늘 ${signedPct(q.chg)}` : ''}</div></span>
       ${spark(q?.closes, g != null ? dir(g) : dir(mo), x.avg)}
       <span class="right">${g != null
         ? `<b class="${dir(g)}">${arrow(g)} ${Math.abs(g).toFixed(2)}%</b><div class="${dir(g)}">${v.gain != null ? signedKRW(v.gain) : ''}</div><div class="mut">${v.val != null ? fmtKRW(v.val) : ''}</div>`
         : `<b>${v.val != null ? fmtKRW(v.val) : q ? fmtCur(q.cur, q.p * x.qty) : '–'}</b><div class="mut">${q ? '' : '시세 없음'}</div>`}</span></button>`;
   }
-  h += `</section><p class="small-note">수익률은 내 평단 대비예요: 빨강 ▲ = 평단보다 올라 있음, 파랑 ▼ = 평단보다 내려 있음. 작은 그래프는 최근 1개월, 점선은 내 평단. 시세는 야후 파이낸스로 15~20분 늦을 수 있어요. 미국 주식은 지금 환율로 원화로 바꿔 보여줘요.</p>`;
+  h += `</section><p class="small-note">수익률은 내 평단 대비예요: 빨강 ▲ = 평단보다 올라 있음, 파랑 ▼ = 평단보다 내려 있음. 작은 그래프는 최근 1개월, 점선은 내 평단. 같은 종목이 여러 계좌에 있으면 한 줄로 합치고, 평단은 수량만큼 섞어 계산해요(종목을 누르면 계좌별로 보여요). 시세는 야후 파이낸스로 15~20분 늦을 수 있어요. 미국 주식은 지금 환율로 원화로 바꿔 보여줘요.</p>`;
   return h;
 }
 let quoting = false;
@@ -973,10 +1006,12 @@ function openStockAdd() {
   setTimeout(() => inp.focus(), 250);
 }
 function pickStock(x) {
-  const exist = holdings().find(h => h.sym === x.sym);
-  if (exist) { toast('이미 있는 종목이에요. 수량을 고쳐 주세요'); return openStock(exist.id); }
+  const exist = holdings().filter(h => h.sym === x.sym), names = brokerNames();
   openSheet(shTop('종목 추가', '한국 증권 계좌') + `<h2>${esc(x.name)}</h2><p class="mut" style="margin:0 0 6px;font-size:13px">${esc(x.sym)} · ${esc(x.ex || '')}</p>
     <div id="p-now" style="font-size:20px;font-weight:800;margin-bottom:16px">시세 받는 중…</div>
+    ${exist.length ? `<div class="note-line" style="display:block;margin:0 0 14px">이미 ${exist.map(h => `${esc(h.ba || '이름 없는 계좌')}에 ${qtyTxt(h.qty)}주`).join(', ')} 있어요. 다른 계좌 것이면 계좌 이름을 넣고 추가하세요. 같은 계좌면 <button class="link" data-act="stock" data-sym="${esc(x.sym)}" style="font-weight:700;text-decoration:underline">거기서 고쳐요</button>.</div>` : ''}
+    <label class="f" style="display:block;margin-bottom:${names.length ? 8 : 16}px"><small>증권 계좌${exist.length ? '' : ' (여러 곳이면, 없으면 비워 두기)'}</small><input class="inp" id="p-ba" maxlength="30" placeholder="예: 토스증권, 키움, ISA" autocomplete="off"></label>
+    ${names.length ? `<div class="chips" style="margin:0 0 16px">${names.map(n => `<button class="chip" data-ba="${esc(n)}">${esc(n)}</button>`).join('')}</div>` : ''}
     <div class="fields"><label class="f"><small>갖고 있는 수량 (주)</small><input class="inp lg" id="p-qty" inputmode="decimal" placeholder="0"></label>
     <label class="f"><small>평단 (평균 매수가) <span id="p-cur"></span></small><input class="inp lg" id="p-avg" inputmode="decimal" placeholder="0"></label></div>
     <p class="small-note" style="margin:-8px 0 16px">평단은 증권 앱의 '평균단가'예요. 평단을 넣어야 내 평단 대비 수익률이 보여요.</p>
@@ -990,51 +1025,102 @@ function pickStock(x) {
     QUOTES[x.sym] = q; cur = q.cur; show();
     el.innerHTML = `${fmtCur(q.cur, q.p)} <span class="${dir(q.chg)}" style="font-size:15px">${pctTxt(q.chg)}</span>`;
   }).catch(() => {});
-  setTimeout(() => document.getElementById('p-qty')?.focus(), 250);
+  const baIn = document.getElementById('p-ba');
+  $sheet.querySelectorAll('[data-ba]').forEach(b => b.onclick = () => { baIn.value = b.dataset.ba; $sheet.querySelectorAll('[data-ba]').forEach(c => c.classList.toggle('on', c === b)); });
+  setTimeout(() => (exist.length ? baIn : document.getElementById('p-qty'))?.focus(), 250);
   document.getElementById('p-save').onclick = () => {
+    const ba = baIn.value.trim();
+    const same = exist.find(h => (h.ba || '') === ba);
+    if (same) { toast(ba ? `${ba}에 이미 있어요. 거기서 수량·평단을 고쳐 주세요` : '다른 계좌 것이면 계좌 이름을 넣어 주세요'); if (ba) openStock(x.sym); return; }
     const qty = parseQty(document.getElementById('p-qty').value);
     if (qty == null || qty <= 0) return toast('수량을 넣어 주세요');
     const raw = document.getElementById('p-avg').value;
     const avg = parseAmt(raw); // 평단은 소수점이 있을 수 있음 (원화도)
-    change('stocks', newId(), { acc: 'kr', sym: x.sym, name: x.name, cur: cur || undefined, qty, ...(avg ? { avg } : {}), u: Date.now() });
+    change('stocks', newId(), { acc: 'kr', sym: x.sym, name: x.name, cur: cur || undefined, ...(ba ? { ba } : {}), qty, ...(avg ? { avg } : {}), u: Date.now() });
     closeSheet(); toast('추가했어요'); refreshQuotes(true);
   };
 }
 
-// 종목 자세히
+// 종목 자세히: 같은 종목의 계좌별 보유를 함께 보여주고 고침
 const chartCache = {};
-function openStock(id) {
-  const x = D.stocks[id]; if (!x) return;
+function openStock(key) {
+  const sym = D.stocks[key]?.sym || key;
+  const items0 = holdings().filter(h => h.sym === sym); if (!items0.length) return;
   let range = '3mo';
+  const rows = items0.sort((a, b) => (a.ba || '').localeCompare(b.ba || '', 'ko'))
+    .map(h => ({ id: h.id, ba: h.ba || '', qty: qtyTxt(h.qty), avg: h.avg != null ? String(h.avg) : '' }));
   const draw = () => {
-    const v = hv(x), q = v.q, cur = q?.cur || x.cur || 'KRW';
+    const x = stockGroups().find(g => g.sym === sym); if (!x) return closeSheet();
+    const v = hv(x), q = v.q, cur = q?.cur || x.cur || 'KRW', multi = x.items.length > 1;
+    const top = $sheet.scrollTop;
     $sheet.innerHTML = shTop(esc(x.sym), '') + `<h2>${esc(x.name || x.sym)}</h2>
       ${v.gainPct != null ? `<div class="${dir(v.gainPct)}" style="font-size:34px;font-weight:800;letter-spacing:-.03em;line-height:1.1">${signedPct(v.gainPct)}</div>
-        <div class="mut" style="font-size:13.5px;margin-bottom:8px">내 평단 ${fmtCur(cur, x.avg)} 대비${v.gain != null ? ` · <b class="${dir(v.gain)}">${signedKRW(v.gain)}</b>` : ''}</div>`
+        <div class="mut" style="font-size:13.5px;margin-bottom:8px">${multi ? '합친 ' : '내 '}평단 ${fmtCur(cur, x.avg)} 대비${v.gain != null ? ` · <b class="${dir(v.gain)}">${signedKRW(v.gain)}</b>` : ''}</div>`
         : `<div class="mut" style="font-size:13.5px;margin-bottom:6px">아래에 평단을 넣으면 내 평단 대비 수익률을 보여줘요</div>`}
       <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:12px"><span style="font-size:20px;font-weight:800">지금 ${q ? fmtCur(cur, q.p) : '–'}</span>
         ${q ? `<span class="mut" style="font-size:13.5px">오늘 ${signedPct(q.chg)}</span>` : ''}</div>
       <div class="types" style="font-size:14px;gap:16px">${[['1mo', '1개월'], ['3mo', '3개월'], ['1y', '1년'], ['5y', '5년']].map(([k, l]) => `<button data-r="${k}" class="${range === k ? 'on' : ''}">${l}</button>`).join('')}</div>
       <div class="chart" id="chart"><p class="small-note" style="padding-top:70px;text-align:center">그래프 받는 중…</p></div>
       <div class="sec"><dl class="kv">
-        <dt>평가금액</dt><dd>${v.val != null ? fmtKRW(v.val) : '–'}${cur !== 'KRW' && q ? `<br><span class="mut" style="font-weight:500;font-size:13px">${fmtCur(cur, q.p * x.qty)} · 1${curSym(cur)} = ${fmtKRW(v.fx || 0)}</span>` : ''}</dd>
+        <dt>평가금액${multi ? ` (${qtyTxt(x.qty)}주)` : ''}</dt><dd>${v.val != null ? fmtKRW(v.val) : '–'}${cur !== 'KRW' && q ? `<br><span class="mut" style="font-weight:500;font-size:13px">${fmtCur(cur, q.p * x.qty)} · 1${curSym(cur)} = ${fmtKRW(v.fx || 0)}</span>` : ''}</dd>
         ${x.avg ? `<dt>산 돈 (평단 × 수량)</dt><dd>${v.cost != null ? fmtKRW(v.cost) : '–'}</dd><dt>평단 대비 수익</dt><dd class="${dir(v.gainPct)}">${v.gain != null ? signedKRW(v.gain) : '–'}</dd>` : ''}
         <dt>오늘 (어제 종가 대비)</dt><dd class="${dir(v.today)}">${v.today != null ? signedKRW(v.today) : '–'}</dd>
-      </dl></div>
-      <div class="sec"><h3>내 보유</h3><div class="fields">
-        <label class="f"><small>수량 (주)</small><input class="inp" id="e-qty" inputmode="decimal" value="${+x.qty.toFixed(6)}"></label>
-        <label class="f"><small>평단 (${curSym(cur)})</small><input class="inp" id="e-avg" inputmode="decimal" value="${x.avg ?? ''}" placeholder="증권 앱의 평균단가"></label></div>
+      </dl>${multi && !x.avg ? '<p class="small-note">계좌마다 평단을 넣어야 합친 수익률이 보여요.</p>' : ''}</div>
+      <div class="sec"><h3>내 보유${rows.length > 1 ? ' · 계좌별' : ''}</h3>
+        ${rows.map((r, i) => {
+          const it = r.id && x.items.find(h => h.id === r.id), iv = it && it.avg ? hv(it) : null;
+          return `<div style="border-top:${i ? '1px solid var(--line)' : '0'};padding-top:${i ? 12 : 0}px;margin-bottom:4px">
+            <div class="cat-edit" style="margin-bottom:8px"><input class="inp" data-hb="${i}" value="${esc(r.ba)}" placeholder="${rows.length > 1 ? '계좌 이름 (예: 토스증권)' : '증권 계좌 (안 넣어도 돼요)'}" maxlength="30" autocomplete="off">
+              ${iv && iv.gainPct != null ? `<b class="${dir(iv.gainPct)}" style="font-size:13.5px;white-space:nowrap">${arrow(iv.gainPct)} ${Math.abs(iv.gainPct).toFixed(2)}%</b>` : ''}
+              ${rows.length > 1 ? `<button class="x-btn" data-hx="${i}" aria-label="이 계좌 것 빼기">${ic('x', 16, 2)}</button>` : ''}</div>
+            <div class="fields" style="margin-bottom:12px">
+              <label class="f"><small>수량 (주)</small><input class="inp" data-hq="${i}" inputmode="decimal" value="${esc(r.qty)}" placeholder="0"></label>
+              <label class="f"><small>평단 (${curSym(cur)})</small><input class="inp" data-ha="${i}" inputmode="decimal" value="${esc(r.avg)}" placeholder="증권 앱의 평균단가"></label></div></div>`;
+        }).join('')}
+        <button class="btn line small" id="e-add" style="margin:0 0 6px">${ic('plus', 15, 2.4)} 다른 계좌에도 있어요</button>
+        ${rows.length > 1 ? '<p class="small-note" style="margin:4px 0 0">계좌마다 평단이 달라도 괜찮아요. 위 수익률은 계좌들을 합친 것(평단을 수량만큼 섞어 계산)이고, 계좌 옆 %는 그 계좌만의 수익률이에요.</p>' : ''}
         <div class="actions"><button class="btn danger" id="e-del">종목 지우기</button><button class="btn" id="e-save">저장</button></div></div>`;
+    $sheet.scrollTop = top;
     $sheet.querySelectorAll('[data-r]').forEach(b => b.onclick = () => { range = b.dataset.r; draw(); });
-    document.getElementById('e-save').onclick = () => {
-      const qty = parseQty(document.getElementById('e-qty').value);
-      if (qty == null || qty < 0) return toast('수량을 확인해 주세요');
-      const raw = document.getElementById('e-avg').value;
-      const avg = parseAmt(raw); // 평단은 소수점이 있을 수 있음 (원화도)
-      const rec = { ...x, qty, u: Date.now() }; if (avg) rec.avg = avg; else delete rec.avg;
-      change('stocks', id, rec); closeSheet(); toast('저장했어요');
+    $sheet.querySelectorAll('[data-hb]').forEach(el => el.oninput = () => { rows[+el.dataset.hb].ba = el.value; });
+    $sheet.querySelectorAll('[data-hq]').forEach(el => el.oninput = () => { rows[+el.dataset.hq].qty = el.value; });
+    $sheet.querySelectorAll('[data-ha]').forEach(el => el.oninput = () => { rows[+el.dataset.ha].avg = el.value; });
+    $sheet.querySelectorAll('[data-hx]').forEach(el => el.onclick = () => {
+      const r = rows[+el.dataset.hx];
+      if (r.id && !confirm(`${r.ba || '이 계좌'}의 ${x.name || x.sym}을(를) 뺄까요? (저장을 눌러야 빠져요)`)) return;
+      rows.splice(+el.dataset.hx, 1); draw();
+    });
+    document.getElementById('e-add').onclick = () => {
+      rows.push({ id: null, ba: '', qty: '', avg: '' }); draw();
+      $sheet.querySelector(`[data-hb="${rows.length - 1}"]`)?.focus();
     };
-    document.getElementById('e-del').onclick = () => { if (confirm(`${x.name || x.sym}을(를) 목록에서 지울까요?`)) { change('stocks', id, null); closeSheet(); toast('지웠어요'); } };
+    document.getElementById('e-save').onclick = () => {
+      const out = [];
+      for (const r of rows) {
+        const ba = r.ba.trim(), qty = parseQty(r.qty);
+        if (!r.id && !ba && !String(r.qty).trim() && !String(r.avg).trim()) continue; // 빈 새 줄
+        if (qty == null || qty < 0) return toast(`${ba || '계좌'} 수량을 확인해 주세요`);
+        const avg = parseAmt(r.avg); // 평단은 소수점이 있을 수 있음 (원화도)
+        out.push({ id: r.id, ba, qty, avg });
+      }
+      if (!out.length) return toast('수량을 넣어 주세요');
+      if (out.length > 1 && out.some(o => !o.ba)) return toast('계좌가 여러 곳이면 계좌 이름을 넣어 주세요');
+      if (new Set(out.map(o => o.ba)).size < out.length) return toast('같은 계좌 이름이 두 번 있어요');
+      const base = x.items[0], keep = new Set();
+      for (const o of out) {
+        const prev = o.id ? D.stocks[o.id] : null;
+        const rec = { ...(prev || { acc: 'kr', sym: x.sym, name: x.name || base.name, ...(x.cur || base.cur ? { cur: x.cur || base.cur } : {}) }), qty: o.qty, u: Date.now() };
+        if (o.ba) rec.ba = o.ba; else delete rec.ba;
+        if (o.avg) rec.avg = o.avg; else delete rec.avg;
+        const id = o.id || newId(); keep.add(id);
+        change('stocks', id, rec);
+      }
+      for (const h of x.items) if (!keep.has(h.id)) change('stocks', h.id, null);
+      closeSheet(); toast('저장했어요');
+    };
+    document.getElementById('e-del').onclick = () => {
+      if (confirm(`${x.name || x.sym}을(를) 목록에서 지울까요?${multi ? ` (계좌 ${x.items.length}곳 모두)` : ''}`)) { for (const h of x.items) change('stocks', h.id, null); closeSheet(); toast('지웠어요'); }
+    };
     loadChart(x.sym, range, cur, x.avg);
   };
   openSheet(''); draw();
@@ -1360,7 +1446,7 @@ function openKrAccounts() {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return toast('날짜를 골라 주세요');
       const accts = [...keep.map(r => ({ id: r.id, name: r.name.trim() })), ...removed.filter(x => !keep.some(r => r.id === x.id))];
       const a = Object.fromEntries(keep.map(r => [r.id, Math.round(parseAmt(r.v, true) * (String(r.v).trim().startsWith('-') ? -1 : 1))]));
-      const snaps = [...(D.kr.snaps || []).filter(s => s.date !== date), { date, a }].sort((x, y) => x.date.localeCompare(y.date)).slice(-400);
+      const snaps = [...(D.kr.snaps || []).filter(s => s.date !== date), { date, a, t: Date.now() }].sort((x, y) => x.date.localeCompare(y.date)).slice(-400);
       change('kr', null, { accts, snaps });
       closeSheet(); toast('잔액을 저장했어요');
     };
@@ -1377,7 +1463,7 @@ function openBalance(k) {
   const b = D.bal[k] || {};
   const now = k === 'sv' ? savingsNow()?.total : balanceNow(k);
   openSheet(shTop('잔액 맞추기', '') + `<h2>${L[0]}</h2>
-    <p class="mut" style="margin:4px 0 14px;font-size:14px">${L[1]} 이 날짜 뒤에 넣은 기록으로 지금 값을 계속 계산해요.${now != null ? `<br>지금 앱에서 계산한 값: <b>${fmt(now)}</b>` : ''}</p>
+    <p class="mut" style="margin:4px 0 14px;font-size:14px">${L[1]} 저장한 뒤에 넣는 기록(같은 날 포함)으로 지금 값을 계속 계산해요.${now != null ? `<br>지금 앱에서 계산한 값: <b>${fmt(now)}</b>` : ''}</p>
     <div class="big-in"><span>${cur}</span><input id="bl-amt" inputmode="decimal" autocomplete="off" value="${b.amount != null ? String(b.amount).replace('.', k === 'kr' ? '.' : ',') : ''}" placeholder="0" aria-label="금액"></div><div class="hint" id="bl-h"></div>
     <div class="fields"><label class="f"><small>이 날 끝 기준</small><input class="inp" type="date" id="bl-date" value="${b.date || today()}"></label><span></span></div>
     <div class="actions">${D.bal[k] ? '<button class="btn danger" id="bl-del">맞춘 값 지우기</button>' : ''}<button class="btn" id="bl-save">저장</button></div>`);
@@ -1389,7 +1475,7 @@ function openBalance(k) {
     const n = read(), dt = document.getElementById('bl-date').value;
     if (n == null) return toast('금액을 넣어 주세요');
     if (!/^\d{4}-\d{2}-\d{2}$/.test(dt)) return toast('날짜를 골라 주세요');
-    change('bal', k, { amount: k === 'kr' ? Math.round(n) : Math.round(n * 100) / 100, date: dt });
+    change('bal', k, { amount: k === 'kr' ? Math.round(n) : Math.round(n * 100) / 100, date: dt, t: Date.now() });
     closeSheet(); toast('저장했어요');
   };
   const del = document.getElementById('bl-del');
@@ -1490,7 +1576,8 @@ function openSettings() {
         if (raw !== '' && pa == null) { toast('잔액은 숫자로 넣어 주세요'); return; }
         const a = pa == null ? null : (raw.startsWith('-') ? -1 : 1) * pa;
         const next = a == null || !isFinite(a) || !dt ? null : { amount: acc === 'kr' ? Math.round(a) : Math.round(a * 100) / 100, date: dt };
-        if (JSON.stringify(D.bal[acc] || null) !== JSON.stringify(next)) change('bal', acc, next);
+        const old = D.bal[acc] ? { amount: D.bal[acc].amount, date: D.bal[acc].date } : null;
+        if (JSON.stringify(old) !== JSON.stringify(next)) change('bal', acc, next && { ...next, t: Date.now() });
       }
       toast('잔액을 저장했어요'); draw();
     };
@@ -1594,7 +1681,7 @@ document.addEventListener('click', e => {
   if (a === 'cat') { V.cat = v && V.cat !== v ? v : null; return render(); }
   if (a === 'bar') { V.bar = V.bar === +v ? null : +v; return render(); }
   if (a === 'stock-add') return openStockAdd();
-  if (a === 'stock') return openStock(el.dataset.id);
+  if (a === 'stock') return openStock(el.dataset.sym || el.dataset.id);
   if (a === 'refresh') { toast('새로 받는 중…'); return refreshQuotes(true); }
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && sheetOpen()) closeSheet(); });
